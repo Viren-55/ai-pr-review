@@ -9,69 +9,75 @@ const IS_DEVELOPMENT = process.env.NODE_ENV === 'development'
 // Mock data for development when backend is not available
 const getMockReviewData = (): ReviewData => ({
   thread_id: 'mock-thread-123',
-  findings: [
-    {
-      type: 'Security',
-      description: 'Potential SQL injection vulnerability',
-      location: 'Line 15-17',
-      severity: 'High',
-      suggestion: 'Use parameterized queries instead of string concatenation',
-      confidence: 0.85,
-      agent: 'Security Agent'
-    },
-    {
-      type: 'Performance',
-      description: 'Inefficient loop structure',
-      location: 'Line 25-30',
-      severity: 'Medium',
-      suggestion: 'Consider using list comprehension for better performance',
-      confidence: 0.72,
-      agent: 'Performance Agent'
-    }
-  ],
-  summary: {
-    total_findings: 2,
-    by_severity: { High: 1, Medium: 1 },
-    by_agent: { 'Security Agent': 1, 'Performance Agent': 1 },
-    overall_score: 7.5,
-    review_timestamp: new Date().toISOString()
+  analysis: {
+    issues: [
+      {
+        id: 1,
+        title: 'Potential SQL injection vulnerability',
+        description: 'String concatenation in SQL query allows injection attacks',
+        severity: 'high',
+        category: 'security',
+        line_number: 15,
+        code_snippet: 'SELECT * FROM users WHERE id = \' + user_id',
+        suggested_fix: 'Use parameterized queries instead',
+        fix_explanation: 'Use parameterized queries to prevent SQL injection'
+      },
+      {
+        id: 2,
+        title: 'Inefficient loop structure',
+        description: 'Nested loops result in O(n^2) complexity',
+        severity: 'medium',
+        category: 'performance',
+        line_number: 25,
+        code_snippet: 'for i in items: for j in items:',
+        suggested_fix: 'Use set for lookups',
+        fix_explanation: 'Consider using list comprehension for better performance'
+      }
+    ],
+    overall_score: 75,
+    analysis_summary: 'Found 2 issues: 1 high severity security issue and 1 medium severity performance issue.',
+    files_analyzed: 1,
+    total_lines_analyzed: 50
   },
-  recommendations: [
-    {
-      category: 'Security',
-      priority: 'High',
-      action: 'Implement input validation',
-      impact: 'Prevents data breaches',
-      effort: 'Medium'
-    }
-  ]
+  timestamp: new Date().toISOString(),
+  model_used: 'Mock Data',
+  filename: 'Mock File',
+  language: 'python',
+  original_code: 'mock code here'
 })
 
+// ReviewData interface now matches what ReviewResultsPage expects
 interface ReviewData {
-  thread_id: string
-  findings: Array<{
-    type: string
-    description: string
-    location: string
-    severity: string
-    suggestion: string
-    confidence: number
-    agent: string
-  }>
-  summary: {
-    total_findings: number
-    by_severity: Record<string, number>
-    by_agent: Record<string, number>
+  analysis: {
+    issues: Array<{
+      id: number
+      title: string
+      description: string
+      severity: string
+      category: string
+      line_number?: number | null
+      code_snippet?: string
+      suggested_fix?: string
+      fix_explanation?: string
+      file_path?: string
+    }>
     overall_score: number
-    review_timestamp: string
+    analysis_summary: string
+    files_analyzed: number
+    total_lines_analyzed: number
   }
-  recommendations: Array<{
-    category: string
-    priority: string
-    action: string
-    impact: string
-    effort: string
-  }>
+  timestamp: string
+  model_used: string
+  filename?: string
+  language?: string
+  original_code?: string
+  thread_id: string
+  submission_id?: number
+  demo_mode?: boolean
+  // For GitHub PR specific data
+  pr_info?: any
+  changes_summary?: any
+  metadata?: any
 }
 
 interface QAResponse {
@@ -95,47 +101,37 @@ export function useCodeReview() {
     setError(null)
     
     try {
-      const response = await axios.post(`${API_BASE_URL}/review`, {
+      // Use the structured API endpoint instead of legacy /review
+      const response = await axios.post(`${API_BASE_URL}/api/submissions`, {
         code,
         language,
-        context: filename ? { filename } : undefined
+        filename: filename || undefined
       })
       
-      if (response.data.status === 'success') {
-        // Transform the simple backend response to match the expected frontend format
+      // The structured API returns data in the correct format already
+      if (response.data && response.data.analysis) {
+        const submissionData = response.data
+        
+        // Transform to ReviewResultsPage expected format
         const transformedData = {
-          thread_id: 'simple-review-' + Date.now(),
-          findings: [
-            {
-              type: 'AI Review',
-              description: response.data.review,
-              location: 'Full code analysis',
-              severity: 'Info',
-              suggestion: 'See detailed review above',
-              confidence: 0.9,
-              agent: 'Azure OpenAI ' + response.data.model_used
-            }
-          ],
-          summary: {
-            total_findings: 1,
-            by_severity: { Info: 1 },
-            by_agent: { ['Azure OpenAI ' + response.data.model_used]: 1 },
-            overall_score: 8.0,
-            review_timestamp: response.data.timestamp
+          analysis: {
+            issues: submissionData.analysis.issues || [],
+            overall_score: submissionData.analysis.overall_score || 0,
+            analysis_summary: submissionData.analysis.analysis_summary || '',
+            files_analyzed: 1,
+            total_lines_analyzed: code.split('\n').length
           },
-          recommendations: [
-            {
-              category: 'General',
-              priority: 'Medium',
-              action: 'Review the AI feedback',
-              impact: 'Code quality improvement',
-              effort: 'Low'
-            }
-          ]
+          timestamp: submissionData.created_at || new Date().toISOString(),
+          model_used: submissionData.analysis.model_used || 'Azure OpenAI',
+          filename: filename || 'Submitted Code',
+          language: language,
+          original_code: code,
+          thread_id: 'code-review-' + Date.now(),
+          submission_id: submissionData.id
         }
-        setReviewData(transformedData)
+        setReviewData(transformedData as any)
       } else {
-        throw new Error(response.data.message || 'Review failed')
+        throw new Error('Invalid response format from API')
       }
     } catch (err: any) {
       let errorMessage = 'Review failed'
@@ -162,24 +158,57 @@ export function useCodeReview() {
   }, [])
 
   const reviewGitHubPR = useCallback(async (
-    owner: string, 
-    repo: string, 
-    prNumber: number, 
-    token?: string
+    prUrl: string, 
+    language: string = 'javascript'
   ) => {
     setIsReviewing(true)
     setError(null)
     
     try {
       const response = await axios.post(`${API_BASE_URL}/review/github-pr`, {
-        owner,
-        repo,
-        pr_number: prNumber,
-        github_token: token
+        pr_url: prUrl,
+        language: language
       })
       
       if (response.data.status === 'success') {
-        setReviewData(response.data.review)
+        // Pass the raw analysis data directly to ReviewResultsPage
+        // ReviewResultsPage expects analysis.issues structure
+        const analysisData = response.data.analysis
+        
+        // Transform to the format ReviewResultsPage expects
+        const transformedData = {
+          analysis: {
+            issues: analysisData.analysis.issues.map((issue: any, index: number) => ({
+              id: index + 1,
+              title: issue.title,
+              description: issue.description,
+              severity: issue.severity,
+              category: issue.category,
+              line_number: issue.line_number,
+              code_snippet: issue.code_snippet,
+              suggested_fix: issue.suggested_fix,
+              fix_explanation: issue.fix_explanation || issue.suggestion,
+              file_path: issue.file_path
+            })),
+            overall_score: analysisData.analysis.overall_score,
+            analysis_summary: analysisData.analysis.analysis_summary,
+            files_analyzed: analysisData.analysis.files_analyzed,
+            total_lines_analyzed: analysisData.analysis.total_lines_analyzed
+          },
+          pr_info: analysisData.pr_info,
+          changes_summary: analysisData.changes_summary,
+          metadata: analysisData.metadata,
+          timestamp: response.data.timestamp,
+          demo_mode: response.data.demo_mode,
+          model_used: response.data.demo_mode ? 'Demo Mode' : 'Azure OpenAI',
+          // Add additional fields for compatibility
+          filename: analysisData.pr_info?.title || 'GitHub PR',
+          language: language,
+          original_code: `GitHub PR: ${prUrl}`,
+          thread_id: `pr-review-${analysisData.pr_info.pr_number}-${Date.now()}`
+        }
+        
+        setReviewData(transformedData as any)
       } else {
         throw new Error(response.data.message || 'GitHub PR review failed')
       }
