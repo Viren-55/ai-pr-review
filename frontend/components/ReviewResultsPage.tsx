@@ -193,7 +193,7 @@ export default function ReviewResultsPage({ reviewData, onViewDetails, onNewRevi
     }
   }
 
-  // Left Pane - File & Issue Navigation
+  // Left Pane - Enhanced File & Issue Navigation
   const renderLeftPane = () => {
     if (leftPaneCollapsed) {
       return (
@@ -201,10 +201,21 @@ export default function ReviewResultsPage({ reviewData, onViewDetails, onNewRevi
           <Button 
             variant="link" 
             onClick={() => setLeftPaneCollapsed(false)}
-            className="collapse-toggle vertical-text"
+            className="collapse-toggle"
+            style={{ 
+              writingMode: 'vertical-lr',
+              padding: '2rem 0.5rem',
+              height: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--text-muted)'
+            }}
           >
-            <i className="bi bi-chevron-right"></i>
-            Files
+            <i className="bi bi-chevron-right me-1"></i>
+            <span>Files</span>
           </Button>
         </div>
       )
@@ -212,11 +223,10 @@ export default function ReviewResultsPage({ reviewData, onViewDetails, onNewRevi
 
     return (
       <div className="left-pane-expanded">
-        <div className="pane-header">
+        <div className="enhanced-pane-header">
           <div className="d-flex align-items-center justify-content-between">
-            <h6 className="mb-0 fw-bold">
-              <i className="bi bi-folder2-open me-2"></i>
-              Files & Issues
+            <h6 className="mb-0 fw-bold text-muted">
+              Files
             </h6>
             <Button 
               variant="link" 
@@ -229,78 +239,64 @@ export default function ReviewResultsPage({ reviewData, onViewDetails, onNewRevi
           </div>
         </div>
 
-        <div className="pane-content">
-          {/* Summary Stats */}
-          <div className="summary-stats-compact mb-3">
-            <div className="stats-row">
-              {Object.entries(summary.severityCounts).map(([severity, count]) => (
-                <div key={severity} className="stat-item-mini">
-                  <span className="stat-count" style={{ color: getSeverityColor(severity) }}>
-                    {count}
-                  </span>
-                  <span className="stat-label">{severity.charAt(0).toUpperCase()}</span>
+        <div className="enhanced-pane-content">
+          {/* Enhanced File Tree */}
+          <div className="enhanced-file-tree">
+            {fileTree.length > 0 ? (
+              <div className="file-tree-section">
+                <div className="folder-header">
+                  <i className="bi bi-folder2-open me-2 text-primary"></i>
+                  <span className="folder-name">Files</span>
+                  <i className="bi bi-chevron-down ms-auto"></i>
                 </div>
-              ))}
-            </div>
-          </div>
-
-          {/* File Tree */}
-          <div className="file-tree">
-            {fileTree.map((file) => (
-              <div key={file.path} className="file-node">
-                <div 
-                  className={`file-header ${selectedFile === file.path ? 'selected' : ''}`}
-                  onClick={() => handleFileClick(file)}
-                >
-                  <i className="bi bi-file-earmark-code me-2"></i>
-                  <span className="file-name">{file.name}</span>
-                  <Badge bg="secondary" className="ms-auto issue-count">
-                    {file.issues.length}
-                  </Badge>
-                </div>
-
-                {/* Issues under each file */}
-                {file.expanded && file.issues.map((issue) => (
+                
+                {fileTree.map((file) => (
+                <div key={file.path} className="enhanced-file-node">
                   <div 
-                    key={issue.id}
-                    className={`issue-item ${selectedIssueId === issue.id ? 'selected' : ''} ${fixedIssues.has(issue.id) ? 'fixed' : ''}`}
-                    onClick={() => handleIssueClick(issue)}
+                    className={`enhanced-file-header ${selectedFile === file.path ? 'selected' : ''}`}
+                    onClick={() => handleFileClick(file)}
                   >
-                    <div className="issue-indicator">
-                      <i 
-                        className={fixedIssues.has(issue.id) ? "bi bi-check-circle-fill" : "bi bi-exclamation-triangle-fill"} 
-                        style={{ color: fixedIssues.has(issue.id) ? '#28a745' : getSeverityColor(issue.severity) }}
-                      ></i>
+                    <div className="file-icon-container">
+                      <i className="bi bi-file-earmark-code file-icon"></i>
+                      {file.issues.length > 0 && (
+                        <span className="issue-indicator-badge">{file.issues.length}</span>
+                      )}
                     </div>
-                    <div className="issue-content">
-                      <div className="issue-title">{issue.title}</div>
-                      <div className="issue-meta">
-                        <Badge 
-                          bg="" 
-                          className="severity-badge"
-                          style={{ 
-                            backgroundColor: getSeverityBg(issue.severity),
-                            color: getSeverityColor(issue.severity)
-                          }}
-                        >
-                          {issue.severity.toUpperCase()}
-                        </Badge>
-                        {issue.lineNumber && (
-                          <span className="line-info">Line {issue.lineNumber}</span>
-                        )}
-                      </div>
-                    </div>
+                    <span className="enhanced-file-name">{file.name}</span>
                   </div>
+
+                </div>
                 ))}
               </div>
-            ))}
+            ) : (
+              <div className="file-tree-section">
+                <div className="folder-header">
+                  <i className="bi bi-folder2-open me-2 text-primary"></i>
+                  <span className="folder-name">Files</span>
+                  <i className="bi bi-chevron-down ms-auto"></i>
+                </div>
+                <div className="enhanced-file-node">
+                  <div className="enhanced-file-header selected">
+                    <div className="file-icon-container">
+                      <i className="bi bi-file-earmark-code file-icon"></i>
+                      {parsedIssues.length > 0 && (
+                        <span className="issue-indicator-badge">{parsedIssues.length}</span>
+                      )}
+                    </div>
+                    <span className="enhanced-file-name">
+                      {reviewData?.filename || 'Submitted Code'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
     )
   }
 
-  // Middle Pane - Enhanced Code Viewer
+  // Middle Pane - Enhanced Code Viewer with Tabs
   const renderMiddlePane = () => {
     const lines = sampleCode.split('\n')
     const currentFileIssues = selectedFile 
@@ -308,100 +304,69 @@ export default function ReviewResultsPage({ reviewData, onViewDetails, onNewRevi
       : []
 
     return (
-      <div className="middle-pane">
-        <div className="code-header">
+      <div className="enhanced-middle-pane">
+        {/* Enhanced Code Header with Tabs */}
+        <div className="enhanced-code-header">
           <div className="d-flex align-items-center justify-content-between">
-            <div className="d-flex align-items-center">
-              <i className="bi bi-file-earmark-code me-2 text-primary"></i>
-              <span className="fw-semibold">{selectedFile || 'Select a file'}</span>
-              {currentFileIssues.length > 0 && (
-                <Badge bg="warning" className="ms-2">
-                  {currentFileIssues.length} issues
-                </Badge>
-              )}
+            <div className="file-info-section">
+              <div className="d-flex align-items-center">
+                <i className="bi bi-folder2-open me-2 text-muted"></i>
+                <span className="file-path">src/ </span>
+                <span className="file-name">{selectedFile?.split('/').pop() || 'crisp_report_data_extraction.py'}</span>
+              </div>
+              <div className="file-meta">
+                <span className="language-badge">Python</span>
+                <span className="line-count">• 2730 lines</span>
+              </div>
             </div>
-            <div className="d-flex align-items-center gap-2">
-              {/* View Mode Toggle */}
-              <div className="btn-group btn-group-sm" role="group">
-                <input 
-                  type="radio" 
-                  className="btn-check" 
-                  name="viewMode" 
-                  id="original"
-                  checked={viewMode === 'original'}
-                  onChange={() => setViewMode('original')}
-                />
-                <label className="btn btn-outline-secondary" htmlFor="original">
-                  <i className="bi bi-file-text me-1"></i>Original
-                </label>
-
-                <input 
-                  type="radio" 
-                  className="btn-check" 
-                  name="viewMode" 
-                  id="fixed"
-                  checked={viewMode === 'fixed'}
-                  onChange={() => setViewMode('fixed')}
-                />
-                <label className="btn btn-outline-success" htmlFor="fixed">
-                  <i className="bi bi-patch-check me-1"></i>Fixed
-                </label>
-
-                <input 
-                  type="radio" 
-                  className="btn-check" 
-                  name="viewMode" 
-                  id="diff"
-                  checked={viewMode === 'diff'}
-                  onChange={() => setViewMode('diff')}
-                />
-                <label className="btn btn-outline-info" htmlFor="diff">
-                  <i className="bi bi-arrow-left-right me-1"></i>Diff
-                </label>
-              </div>
-              
-              <div className="file-info">
-                <Badge bg="primary" className="small">{reviewData?.language || 'Code'}</Badge>
-                <Badge bg="secondary" className="small">{lines.length} lines</Badge>
-              </div>
+            
+            {/* Code View Tabs */}
+            <div className="code-tabs">
+              <button 
+                className={`code-tab ${viewMode === 'original' ? 'active' : ''}`}
+                onClick={() => setViewMode('original')}
+              >
+                Original
+              </button>
+              <button 
+                className={`code-tab ${viewMode === 'fixed' ? 'active' : ''}`}
+                onClick={() => setViewMode('fixed')}
+              >
+                Fixed
+              </button>
+              <button 
+                className={`code-tab ${viewMode === 'diff' ? 'active' : ''}`}
+                onClick={() => setViewMode('diff')}
+              >
+                D
+              </button>
             </div>
           </div>
         </div>
 
-        <div className="code-content">
-          {selectedFile ? (
-            <>
-              {viewMode === 'diff' ? (
-                // Diff view for comparing original vs fixed
-                <div className="diff-view">
-                  <div className="diff-pane diff-before">
-                    <div className="diff-header">
-                      <i className="bi bi-dash-circle text-danger me-2"></i>
-                      Original Code
-                    </div>
-                    {renderCodeLines(lines, 'original')}
-                  </div>
-                  <div className="diff-pane diff-after">
-                    <div className="diff-header">
-                      <i className="bi bi-plus-circle text-success me-2"></i>
-                      Fixed Code
-                    </div>
-                    {renderCodeLines(lines, 'fixed')}
-                  </div>
+        {/* Enhanced Code Content */}
+        <div className="enhanced-code-content">
+          {viewMode === 'diff' ? (
+            // Enhanced Diff view
+            <div className="enhanced-diff-view">
+              <div className="diff-pane diff-before">
+                <div className="diff-header">
+                  <i className="bi bi-dash-circle text-danger me-2"></i>
+                  Original Code
                 </div>
-              ) : (
-                // Single view (original or fixed)
-                renderCodeLines(lines, viewMode)
-              )}
-            </>
-          ) : (
-            <div className="empty-code-view">
-              <div className="text-center py-5">
-                <i className="bi bi-file-earmark-code display-1 text-muted mb-3"></i>
-                <h5 className="text-muted">Select a file to view code</h5>
-                <p className="text-muted">Choose a file from the left panel to see its contents and issues</p>
+                {renderEnhancedCodeLines(lines, 'original')}
+              </div>
+              <div className="diff-pane diff-after">
+                <div className="diff-header">
+                  <i className="bi bi-plus-circle text-success me-2"></i>
+                  Fixed Code
+                </div>
+                {renderEnhancedCodeLines(lines, 'fixed')}
               </div>
             </div>
+          ) : (
+            // Enhanced Single view - always show code
+            renderEnhancedCodeLines(lines, viewMode)
           )}
         </div>
       </div>
@@ -485,7 +450,57 @@ export default function ReviewResultsPage({ reviewData, onViewDetails, onNewRevi
     )
   }
 
-  // Right Pane - AI-Powered Issue Panel
+  // Enhanced code rendering with better issue indicators
+  const renderEnhancedCodeLines = (lines: string[], mode: 'original' | 'fixed') => {
+    const currentFileIssues = selectedFile 
+      ? parsedIssues.filter(issue => issue.filePath === selectedFile)
+      : []
+
+    return (
+      <div className="enhanced-code-lines">
+        {lines.map((line, index) => {
+          const lineNumber = index + 1
+          const isHighlighted = highlightedLines.includes(lineNumber)
+          const lineIssues = currentFileIssues.filter(issue => issue.lineNumber === lineNumber)
+          const hasIssue = lineIssues.length > 0
+          const selectedLineIssue = lineIssues.find(issue => issue.id === selectedIssueId)
+          
+          let displayLine = line
+          if (mode === 'fixed' && selectedLineIssue && fixedIssues.has(selectedLineIssue.id)) {
+            displayLine = selectedLineIssue.fixedCode?.split('\\n')[0] || line
+          }
+
+          // Apply syntax highlighting
+          const highlightedLine = reviewData?.language === 'python' 
+            ? highlightPythonSyntax(displayLine)
+            : displayLine
+          
+          return (
+            <div 
+              key={`${mode}-${lineNumber}`}
+              className={`enhanced-code-line ${isHighlighted ? 'highlighted' : ''} ${selectedLineIssue ? 'selected-issue' : ''} ${hasIssue ? 'has-issue' : ''}`}
+              data-line={lineNumber}
+            >
+              <span className="enhanced-line-number">{lineNumber}</span>
+              <span 
+                className="enhanced-line-content"
+                dangerouslySetInnerHTML={{ __html: highlightedLine }}
+              />
+              {hasIssue && (
+                <div className="enhanced-line-issues">
+                  <div className="issue-indicator-dot" style={{ backgroundColor: getSeverityColor(lineIssues[0].severity) }}>
+                    <i className="bi bi-exclamation-triangle-fill"></i>
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
+  // Enhanced Right Pane - AI Assistant
   const renderRightPane = () => {
     if (rightPaneCollapsed) {
       return (
@@ -493,10 +508,21 @@ export default function ReviewResultsPage({ reviewData, onViewDetails, onNewRevi
           <Button 
             variant="link" 
             onClick={() => setRightPaneCollapsed(false)}
-            className="collapse-toggle vertical-text"
+            className="collapse-toggle"
+            style={{ 
+              writingMode: 'vertical-lr',
+              padding: '2rem 0.5rem',
+              height: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--text-muted)'
+            }}
           >
-            <i className="bi bi-chevron-left"></i>
-            Issues
+            <i className="bi bi-chevron-left me-1"></i>
+            <span>AI Assistant</span>
           </Button>
         </div>
       )
@@ -508,13 +534,15 @@ export default function ReviewResultsPage({ reviewData, onViewDetails, onNewRevi
       : parsedIssues
 
     return (
-      <div className="right-pane-expanded">
-        <div className="pane-header">
+      <div className="enhanced-right-pane">
+        <div className="enhanced-ai-header">
           <div className="d-flex align-items-center justify-content-between">
-            <h6 className="mb-0 fw-bold">
-              <i className="bi bi-robot me-2"></i>
-              AI Issue Analysis
-            </h6>
+            <div className="ai-title-section">
+              <div className="ai-status-indicator">
+                <div className="status-dot active"></div>
+                <h6 className="mb-0 fw-bold">AI Assistant</h6>
+              </div>
+            </div>
             <Button 
               variant="link" 
               size="sm"
@@ -526,184 +554,155 @@ export default function ReviewResultsPage({ reviewData, onViewDetails, onNewRevi
           </div>
         </div>
 
-        <div className="pane-content">
-          {/* Current File Issues */}
-          {selectedFile && currentFileIssues.length > 0 && (
-            <div className="file-issues-section mb-4">
-              <div className="section-header mb-3">
-                <h6 className="mb-1">
-                  <i className="bi bi-file-earmark-code me-2"></i>
-                  {selectedFile.split('/').pop()}
-                </h6>
-                <small className="text-muted">{currentFileIssues.length} issues found</small>
-              </div>
-
-              {/* Apply All Fixes Button */}
-              {currentFileIssues.some(issue => !fixedIssues.has(issue.id)) && (
-                <div className="apply-all-section mb-3">
-                  <Button 
-                    variant="outline-success" 
-                    size="sm" 
-                    className="w-100"
-                    onClick={() => {
-                      currentFileIssues.forEach(issue => {
-                        if (!fixedIssues.has(issue.id)) {
-                          handleFixIssue(issue)
-                        }
-                      })
-                    }}
-                  >
-                    <i className="bi bi-magic me-2"></i>
-                    Apply All Fixes ({currentFileIssues.filter(issue => !fixedIssues.has(issue.id)).length})
-                  </Button>
-                </div>
-              )}
-
-              {/* Issue List for Current File */}
-              <div className="current-file-issues">
-                {currentFileIssues.map(issue => (
-                  <div 
-                    key={issue.id}
-                    className={`issue-card ${selectedIssueId === issue.id ? 'selected' : ''} ${fixedIssues.has(issue.id) ? 'fixed' : ''}`}
-                    onClick={() => handleIssueClick(issue)}
-                  >
-                    <div className="issue-card-header">
-                      <div className="d-flex align-items-center justify-content-between">
-                        <Badge 
-                          className="severity-badge"
-                          style={{ 
-                            backgroundColor: getSeverityBg(issue.severity),
-                            color: getSeverityColor(issue.severity)
-                          }}
-                        >
-                          {issue.severity.toUpperCase()}
-                        </Badge>
-                        {fixedIssues.has(issue.id) ? (
-                          <i className="bi bi-check-circle-fill text-success"></i>
-                        ) : (
-                          <Button
-                            variant="outline-success"
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleFixIssue(issue)
-                            }}
-                          >
-                            <i className="bi bi-wrench"></i>
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                    <div className="issue-card-body">
-                      <h6 className="issue-title">{issue.title}</h6>
-                      <p className="issue-description text-muted small">{issue.description}</p>
-                      {issue.lineNumber && (
-                        <small className="line-reference">
-                          <i className="bi bi-arrow-right me-1"></i>
-                          Line {issue.lineNumber}
-                        </small>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Selected Issue Details */}
-          {selectedIssue && (
-            <div className="selected-issue-details">
-              <div className="section-header mb-3">
-                <h6 className="mb-1">Issue Details</h6>
-                <small className="text-muted">AI-generated analysis and fix</small>
-              </div>
-
-              <div className="issue-detail-card">
-                <div className="issue-header mb-3">
-                  <h5 className="fw-bold mb-2">{selectedIssue.title}</h5>
-                  <div className="d-flex align-items-center gap-2 mb-2">
-                    <Badge 
-                      style={{ 
-                        backgroundColor: getSeverityBg(selectedIssue.severity),
-                        color: getSeverityColor(selectedIssue.severity),
-                        border: `1px solid ${getSeverityColor(selectedIssue.severity)}40`
-                      }}
-                    >
-                      {selectedIssue.severity.toUpperCase()}
-                    </Badge>
-                    <Badge bg="secondary">{selectedIssue.category}</Badge>
-                  </div>
-                </div>
-
-                <div className="issue-content">
-                  <div className="description-section mb-3">
-                    <h6>
-                      <i className="bi bi-info-circle me-2"></i>
-                      Why this is an issue
-                    </h6>
-                    <p className="text-muted">{selectedIssue.description}</p>
-                  </div>
-
-                  {selectedIssue.codeSnippet && (
-                    <div className="code-section mb-3">
-                      <h6>
-                        <i className="bi bi-code-slash me-2"></i>
-                        Problematic Code
-                      </h6>
-                      <pre className="code-snippet"><code>{selectedIssue.codeSnippet}</code></pre>
-                    </div>
-                  )}
-
-                  {selectedIssue.fixedCode && (
-                    <div className="fix-section mb-3">
-                      <h6>
-                        <i className="bi bi-patch-check me-2"></i>
-                        AI-Generated Fix
-                      </h6>
-                      <pre className="code-fix"><code>{selectedIssue.fixedCode}</code></pre>
-                    </div>
-                  )}
-
-                  <div className="recommendation-section mb-3">
-                    <h6>
-                      <i className="bi bi-lightbulb me-2"></i>
-                      Recommendation
-                    </h6>
-                    <p className="text-muted">{selectedIssue.suggestion}</p>
-                  </div>
-
-                  <div className="action-section">
-                    {fixedIssues.has(selectedIssue.id) ? (
-                      <div className="fixed-status">
-                        <Badge bg="success" className="px-3 py-2">
-                          <i className="bi bi-check-lg me-2"></i>
-                          Fix Applied
-                        </Badge>
-                      </div>
-                    ) : (
-                      <Button 
-                        variant="success" 
-                        onClick={() => handleFixIssue(selectedIssue)}
-                        className="w-100"
+        <div className="enhanced-ai-content">
+          {/* Enhanced Issue Cards */}
+          <div className="ai-issues-section">
+            {currentFileIssues.length > 0 ? (
+              currentFileIssues.map(issue => (
+                <div 
+                  key={issue.id}
+                  className={`enhanced-issue-card ${selectedIssueId === issue.id ? 'selected' : ''} ${fixedIssues.has(issue.id) ? 'fixed' : ''}`}
+                  onClick={() => handleIssueClick(issue)}
+                >
+                  <div className="enhanced-issue-header">
+                    <div className="severity-indicator">
+                      <span 
+                        className={`severity-badge-enhanced ${issue.severity}`}
+                        style={{ 
+                          backgroundColor: getSeverityBg(issue.severity),
+                          color: getSeverityColor(issue.severity)
+                        }}
                       >
-                        <i className="bi bi-wrench me-2"></i>
-                        Apply AI Fix
-                      </Button>
-                    )}
+                        {issue.severity.toUpperCase()}
+                      </span>
+                    </div>
+                    <div className="issue-line-info">
+                      Line {issue.lineNumber || '79'}
+                    </div>
                   </div>
+                  
+                  <div className="enhanced-issue-body">
+                    <h6 className="enhanced-issue-title">{issue.title}</h6>
+                    <p className="enhanced-issue-description">
+                      {issue.description}
+                    </p>
+                    
+                    {/* AI Suggestion */}
+                    <div className="ai-suggestion">
+                      <div className="suggestion-icon">
+                        <i className="bi bi-lightbulb"></i>
+                      </div>
+                      <div className="suggestion-text">
+                        {issue.suggestion}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              // Sample issues from the design
+              <>
+                <div className="enhanced-issue-card selected">
+                  <div className="enhanced-issue-header">
+                    <div className="severity-indicator">
+                      <span className="severity-badge-enhanced high" style={{ backgroundColor: 'rgba(255, 193, 7, 0.1)', color: '#f59e0b' }}>
+                        HIGH
+                      </span>
+                    </div>
+                    <div className="issue-line-info">
+                      Line 79
+                    </div>
+                  </div>
+                  
+                  <div className="enhanced-issue-body">
+                    <h6 className="enhanced-issue-title">SQL injection vulnerability detected. User input is directly concatenated into SQL query without proper sanitization.</h6>
+                    
+                    <div className="ai-suggestion">
+                      <div className="suggestion-icon">
+                        <i className="bi bi-lightbulb"></i>
+                      </div>
+                      <div className="suggestion-text">
+                        Use parameterized queries or prepared statements to prevent SQL injection.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="enhanced-issue-card">
+                  <div className="enhanced-issue-header">
+                    <div className="severity-indicator">
+                      <span className="severity-badge-enhanced high" style={{ backgroundColor: 'rgba(255, 193, 7, 0.1)', color: '#f59e0b' }}>
+                        HIGH
+                      </span>
+                    </div>
+                    <div className="issue-line-info">
+                      Line 249
+                    </div>
+                  </div>
+                  
+                  <div className="enhanced-issue-body">
+                    <h6 className="enhanced-issue-title">Potential performance issue: Missing index on frequently queried columns in large dataset.</h6>
+                    
+                    <div className="ai-suggestion">
+                      <div className="suggestion-icon">
+                        <i className="bi bi-lightbulb"></i>
+                      </div>
+                      <div className="suggestion-text">
+                        Consider adding indexes on line_item_usage_account_name and line_item_usage_account_id.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="enhanced-issue-card">
+                  <div className="enhanced-issue-header">
+                    <div className="severity-indicator">
+                      <span className="severity-badge-enhanced high" style={{ backgroundColor: 'rgba(255, 193, 7, 0.1)', color: '#f59e0b' }}>
+                        HIGH
+                      </span>
+                    </div>
+                    <div className="issue-line-info">
+                      Line 576
+                    </div>
+                  </div>
+                  
+                  <div className="enhanced-issue-body">
+                    <h6 className="enhanced-issue-title">Exception handling is too broad. Catching all exceptions can hide important errors.</h6>
+                    
+                    <div className="ai-suggestion">
+                      <div className="suggestion-icon">
+                        <i className="bi bi-lightbulb"></i>
+                      </div>
+                      <div className="suggestion-text">
+                        Catch specific exceptions like DatabaseError or ValueError instead of using bare except.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+
+          </div>
+        
+          {/* Chat Interface */}
+          <div className="ai-chat-container">
+            <div className="chat-input-section">
+              <div className="chat-input-wrapper">
+                <input
+                  type="text"
+                  className="chat-input"
+                  placeholder="Ask about the code or issues..."
+                />
+                <div className="chat-actions">
+                  <span className="chat-hint">Press Enter to send, Shift+Enter for new line</span>
+                  <button className="send-button">
+                    Send
+                  </button>
                 </div>
               </div>
             </div>
-          )}
+          </div>
 
-          {/* Empty State */}
-          {!selectedFile && !selectedIssue && (
-            <div className="empty-issue-state text-center py-5">
-              <i className="bi bi-robot display-1 text-muted mb-3"></i>
-              <h5 className="text-muted">Select a file or issue</h5>
-              <p className="text-muted">Choose from the file tree to see AI-powered issue analysis</p>
-            </div>
-          )}
         </div>
       </div>
     )
@@ -712,43 +711,6 @@ export default function ReviewResultsPage({ reviewData, onViewDetails, onNewRevi
 
   return (
     <div className="review-results-container">
-      {/* Compact Header */}
-      <div className="review-header">
-        <Container fluid>
-          <Row className="align-items-center py-3">
-            <Col md={6}>
-              <div className="d-flex align-items-center">
-                <div className="status-icon me-3">
-                  <i className="bi bi-check-circle text-success fs-4"></i>
-                </div>
-                <div>
-                  <h5 className="mb-1 fw-bold">Analysis Complete</h5>
-                  <p className="mb-0 text-muted small">{summary.totalIssues} issues found • {reviewData?.analysis?.analysis_time_seconds || '?'}s</p>
-                </div>
-              </div>
-            </Col>
-            <Col md={6} className="text-end">
-              <div className="d-flex align-items-center justify-content-end gap-3">
-                <div className="score-compact">
-                  <span className="score-number fw-bold fs-4" style={{ color: getSeverityColor(summary.overallScore > 80 ? 'low' : summary.overallScore > 60 ? 'medium' : 'critical') }}>
-                    {summary.overallScore}
-                  </span>
-                  <span className="text-muted">/100</span>
-                </div>
-                <div className="action-buttons">
-                  <Button variant="outline-primary" size="sm" onClick={onViewDetails} className="me-2">
-                    <i className="bi bi-file-text me-1"></i>Report
-                  </Button>
-                  <Button variant="primary" size="sm" onClick={onNewReview}>
-                    <i className="bi bi-plus me-1"></i>New
-                  </Button>
-                </div>
-              </div>
-            </Col>
-          </Row>
-        </Container>
-      </div>
-
       {/* Three-Pane Layout */}
       <div className="three-pane-layout">
         <Container fluid className="h-100">

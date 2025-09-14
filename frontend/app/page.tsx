@@ -37,8 +37,8 @@ export default function App() {
           body: formData
         })
       } else {
-        // For direct code submission
-        response = await fetch('http://localhost:8000/api/submissions', {
+        // For direct code submission - use mock endpoint for testing
+        response = await fetch('http://localhost:8000/api/submissions/mock', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
@@ -108,57 +108,94 @@ ${analysis.analysis_summary}
 
   return (
     <div className="min-vh-100">
-      {/* Navigation Bar */}
-      <Navbar expand="lg" className="shadow-sm">
-        <Container>
+      {/* Enhanced Navigation Bar */}
+      <Navbar expand="lg" className="enhanced-navbar shadow-sm">
+        <Container fluid className="px-4">
           <Navbar.Brand 
             href="#" 
             onClick={() => setCurrentPage('home')}
-            className="fw-bold"
+            className="fw-bold d-flex align-items-center"
           >
-            <i className="bi bi-code-slash me-2 text-primary"></i>
+            <i className="bi bi-layers me-2 text-primary"></i>
             AI Code Review
           </Navbar.Brand>
-          <Navbar.Toggle aria-controls="basic-navbar-nav" />
-          <Navbar.Collapse id="basic-navbar-nav">
-            <Nav className="ms-auto align-items-center">
-              <Nav.Link 
-                onClick={() => setCurrentPage('home')}
-                active={currentPage === 'home'}
-                className={currentPage === 'home' ? 'active' : ''}
-              >
-                Home
-              </Nav.Link>
-              <Nav.Link 
-                onClick={() => setCurrentPage('submit')}
-                active={currentPage === 'submit'}
-                className={currentPage === 'submit' ? 'active' : ''}
-              >
-                Submit Code
-              </Nav.Link>
-              {reviewData && (
-                <>
+          
+          <div className="navbar-center d-flex align-items-center">
+            {reviewData && currentPage === 'results' && (
+              <>
+                <Nav className="navbar-nav-center">
+                  <Nav.Link 
+                    onClick={() => setCurrentPage('submit')}
+                    className="nav-tab"
+                  >
+                    Submit Code
+                  </Nav.Link>
                   <Nav.Link 
                     onClick={() => setCurrentPage('results')}
                     active={currentPage === 'results'}
-                    className={currentPage === 'results' ? 'active' : ''}
+                    className="nav-tab active"
                   >
                     Results
                   </Nav.Link>
                   <Nav.Link 
                     onClick={() => setCurrentPage('details')}
-                    active={currentPage === 'details'}
-                    className={currentPage === 'details' ? 'active' : ''}
+                    className="nav-tab"
                   >
                     Details
                   </Nav.Link>
-                </>
-              )}
-              <Nav.Item className="ms-2">
-                <ThemeToggle />
-              </Nav.Item>
-            </Nav>
-          </Navbar.Collapse>
+                </Nav>
+                
+                {/* Issue Statistics */}
+                <div className="issue-stats ms-4">
+                  <span className="stat-item critical">
+                    <span className="count">0</span>
+                    <span className="label">C</span>
+                  </span>
+                  <span className="stat-item high">
+                    <span className="count">3</span>
+                    <span className="label">H</span>
+                  </span>
+                  <span className="stat-item medium">
+                    <span className="count">1</span>
+                    <span className="label">M</span>
+                  </span>
+                  <span className="stat-item low">
+                    <span className="count">0</span>
+                    <span className="label">L</span>
+                  </span>
+                </div>
+              </>
+            )}
+            
+            {!reviewData && (
+              <Nav className="navbar-nav-center">
+                <Nav.Link 
+                  onClick={() => setCurrentPage('home')}
+                  active={currentPage === 'home'}
+                  className="nav-tab"
+                >
+                  Home
+                </Nav.Link>
+                <Nav.Link 
+                  onClick={() => setCurrentPage('submit')}
+                  active={currentPage === 'submit'}
+                  className="nav-tab"
+                >
+                  Submit Code
+                </Nav.Link>
+              </Nav>
+            )}
+          </div>
+          
+          <div className="navbar-right d-flex align-items-center">
+            {reviewData && currentPage === 'results' && (
+              <button className="btn btn-outline-primary btn-sm me-3">
+                <i className="bi bi-flag me-1"></i>
+                Report
+              </button>
+            )}
+            <ThemeToggle />
+          </div>
         </Container>
       </Navbar>
 
