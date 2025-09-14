@@ -60,6 +60,9 @@ class PRAnalyzer:
             # Extract meaningful code changes for analysis
             analyzable_content = self._extract_code_changes(diff_content, files_data, language)
             
+            # Also try to get full file contents for better display
+            file_contents = await self._fetch_file_contents(pr_info, files_data, language)
+            
             # Run AI analysis on the changes
             if analyzable_content:
                 issues, score, summary = await self.ai_orchestrator.analyze_code(
@@ -103,6 +106,7 @@ class PRAnalyzer:
                     "diff": diff_content,
                     "extracted_code": analyzable_content,
                     "formatted_diff": self._format_diff_for_display(diff_content, files_data, language),
+                    "file_contents": file_contents,
                     "files_data": files_data
                 },
                 "analysis": {
@@ -240,6 +244,56 @@ class PRAnalyzer:
                 line_number += 1
         
         return '\n'.join(formatted_lines) if formatted_lines else "No displayable code changes found."
+    
+    async def _fetch_file_contents(self, pr_info: GitHubPRInfo, files_data: List[Dict], language: str) -> Dict[str, str]:
+        """Fetch full contents of changed files for better display.
+        
+        Args:
+            pr_info: PR information
+            files_data: List of changed files
+            language: Target programming language
+            
+        Returns:
+            dict: Mapping of filename to file content
+        """
+        file_contents = {}
+        
+        # Filter to relevant files and limit to reasonable number
+        relevant_files = [f for f in files_data if self._should_analyze_file(f["filename"], language)][:5]
+        
+        if not relevant_files:
+            return file_contents
+        
+        try:
+            import asyncio
+            
+            # Create tasks for parallel file fetching
+            tasks = []
+            for file_data in relevant_files:
+                filename = file_data["filename"]
+                # Get content from the head branch (the PR branch)
+                task = self.github_client.get_file_content(
+                    pr_info.owner, 
+                    pr_info.repo, 
+                    filename, 
+                    pr_info.head_ref if hasattr(pr_info, 'head_ref') else "HEAD"
+                )
+                tasks.append((filename, task))
+            
+            # Execute tasks in parallel
+            for filename, task in tasks:
+                try:
+                    content = await task
+                    file_contents[filename] = content
+                    logger.info(f"Fetched content for {filename} ({len(content)} chars)")
+                except Exception as e:
+                    logger.warning(f"Failed to fetch content for {filename}: {e}")
+                    file_contents[filename] = f"# Error: Unable to fetch file content\n# {str(e)}"
+            
+        except Exception as e:
+            logger.error(f"Error fetching file contents: {e}")
+        
+        return file_contents
     
     def _should_analyze_file(self, filename: str, target_language: str) -> bool:
         """Check if file should be analyzed based on language and type.

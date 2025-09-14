@@ -179,8 +179,14 @@ export function useCodeReview() {
         const codeContent = analysisData.code_content
         let displayCode = ''
         
-        if (codeContent?.formatted_diff) {
-          // Use formatted diff (best for display with file names and line numbers)
+        if (codeContent?.file_contents && Object.keys(codeContent.file_contents).length > 0) {
+          // Use full file contents (best for complete code review)
+          const files = codeContent.file_contents
+          displayCode = Object.entries(files).map(([filename, content]) => 
+            `=== ${filename} ===\n${content}`
+          ).join('\n\n')
+        } else if (codeContent?.formatted_diff) {
+          // Use formatted diff (good for showing changes)
           displayCode = codeContent.formatted_diff
         } else if (codeContent?.diff) {
           // Fallback to raw diff content
