@@ -3,11 +3,21 @@
 import React, { useState, useCallback, useRef } from 'react'
 import { Container, Row, Col, Card, Button, Form, Alert, Spinner, Nav, Tab } from 'react-bootstrap'
 
-interface SubmitCodePageProps {
-  onSubmit: (code: string, language: string, type: string, filename?: string) => void
+interface GitHubUser {
+  id: number
+  github_id: number
+  username: string
+  email?: string
+  avatar_url?: string
+  created_at: string
 }
 
-export default function SubmitCodePage({ onSubmit }: SubmitCodePageProps) {
+interface SubmitCodePageProps {
+  onSubmit: (code: string, language: string, type: string, filename?: string) => void
+  user?: GitHubUser | null
+}
+
+export default function SubmitCodePage({ onSubmit, user }: SubmitCodePageProps) {
   const [activeTab, setActiveTab] = useState<'paste' | 'upload' | 'github'>('paste')
   const [code, setCode] = useState('')
   const [language, setLanguage] = useState('python')
@@ -41,6 +51,11 @@ export default function SubmitCodePage({ onSubmit }: SubmitCodePageProps) {
         }
         codeToSubmit = await file.text()
       } else if (activeTab === 'github') {
+        if (!user) {
+          setError('Please sign in with GitHub to analyze pull requests')
+          setIsSubmitting(false)
+          return
+        }
         if (!githubUrl.trim()) {
           setError('Please enter a GitHub PR URL')
           setIsSubmitting(false)
@@ -257,30 +272,80 @@ console.log(fibonacci(10));`}
                         <p className="text-secondary">Analyze entire GitHub Pull Requests with full context and diff analysis</p>
                       </div>
                       
-                      <div className="mb-4">
-                        <Form.Label className="fw-semibold mb-3">Pull Request URL</Form.Label>
-                        <Form.Control
-                          type="url"
-                          size="lg"
-                          placeholder="https://github.com/owner/repository/pull/123"
-                          value={githubUrl}
-                          onChange={(e) => setGithubUrl(e.target.value)}
-                          style={{
-                            background: 'rgba(0, 0, 0, 0.4)',
-                            border: '1px solid rgba(255, 255, 255, 0.1)',
-                            borderRadius: '1rem',
-                            color: 'var(--text-primary)',
-                            padding: '1rem 1.5rem'
-                          }}
-                        />
-                      </div>
-                      
-                      <div className="text-center">
-                        <small className="text-secondary">
-                          <i className="bi bi-info-circle me-1"></i>
-                          We'll analyze all changed files and provide comprehensive feedback on your pull request
-                        </small>
-                      </div>
+                      {!user ? (
+                        <div className="text-center py-5">
+                          <div className="glass-card rounded-circle p-4 d-inline-flex mb-4" style={{ width: '80px', height: '80px' }}>
+                            <i className="bi bi-shield-lock text-warning display-6"></i>
+                          </div>
+                          <h5 className="fw-bold text-warning mb-3">GitHub Authentication Required</h5>
+                          <p className="text-secondary mb-4" style={{ maxWidth: '400px', margin: '0 auto' }}>
+                            To analyze GitHub pull requests, please sign in with your GitHub account. 
+                            This allows us to access repository data and provide comprehensive analysis.
+                          </p>
+                          <div className="d-flex justify-content-center gap-2 flex-wrap mb-3">
+                            <span className="badge bg-success bg-opacity-25 text-success">
+                              <i className="bi bi-check2 me-1"></i>
+                              Secure OAuth
+                            </span>
+                            <span className="badge bg-info bg-opacity-25 text-info">
+                              <i className="bi bi-shield-check me-1"></i>
+                              Read-only Access
+                            </span>
+                            <span className="badge bg-primary bg-opacity-25 text-primary">
+                              <i className="bi bi-database me-1"></i>
+                              Encrypted Storage
+                            </span>
+                          </div>
+                          <p className="text-muted small">
+                            <i className="bi bi-info-circle me-1"></i>
+                            Sign in using the GitHub button in the top-right corner
+                          </p>
+                        </div>
+                      ) : (
+                        <div>
+                          <div className="mb-4">
+                            <div className="d-flex align-items-center justify-content-between mb-3">
+                              <Form.Label className="fw-semibold mb-0">Pull Request URL</Form.Label>
+                              <div className="d-flex align-items-center text-success">
+                                {user.avatar_url && (
+                                  <img 
+                                    src={user.avatar_url} 
+                                    alt={user.username}
+                                    className="rounded-circle me-2"
+                                    width="20"
+                                    height="20"
+                                  />
+                                )}
+                                <small>
+                                  <i className="bi bi-check-circle me-1"></i>
+                                  Authenticated as {user.username}
+                                </small>
+                              </div>
+                            </div>
+                            <Form.Control
+                              type="url"
+                              size="lg"
+                              placeholder="https://github.com/owner/repository/pull/123"
+                              value={githubUrl}
+                              onChange={(e) => setGithubUrl(e.target.value)}
+                              style={{
+                                background: 'rgba(0, 0, 0, 0.4)',
+                                border: '1px solid rgba(255, 255, 255, 0.1)',
+                                borderRadius: '1rem',
+                                color: 'var(--text-primary)',
+                                padding: '1rem 1.5rem'
+                              }}
+                            />
+                          </div>
+                          
+                          <div className="text-center">
+                            <small className="text-secondary">
+                              <i className="bi bi-info-circle me-1"></i>
+                              We'll analyze all changed files and provide comprehensive feedback on your pull request
+                            </small>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

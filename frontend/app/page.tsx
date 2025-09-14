@@ -6,12 +6,23 @@ import SubmitCodePage from '@/components/SubmitCodePage'
 import ReviewResultsPage from '@/components/ReviewResultsPage'
 import DetailedFindingsPage from '@/components/DetailedFindingsPage'
 import ThemeToggle from '@/components/ThemeToggle'
+import GitHubAuth from '@/components/GitHubAuth'
 import { Navbar, Container, Nav } from 'react-bootstrap'
+
+interface GitHubUser {
+  id: number
+  github_id: number
+  username: string
+  email?: string
+  avatar_url?: string
+  created_at: string
+}
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState('home')
   const [reviewData, setReviewData] = useState(null)
   const [submittedCode, setSubmittedCode] = useState(null)
+  const [user, setUser] = useState<GitHubUser | null>(null)
 
   const handleStartReview = () => {
     setCurrentPage('submit')
@@ -36,6 +47,21 @@ export default function App() {
           method: 'POST',
           body: formData
         })
+      } else if (type === 'github') {
+        // For GitHub PR submissions - extract URL from code
+        const githubUrl = code.replace('GitHub PR: ', '').trim()
+        
+        response = await fetch('http://localhost:8000/api/github/pr/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include', // Include cookies for authentication
+          body: JSON.stringify({ 
+            github_url: githubUrl,
+            language,
+            apply_fixes: false,
+            create_review: false
+          })
+        })
       } else {
         // For direct code submission - use real API endpoint
         response = await fetch('http://localhost:8000/api/submissions', {
@@ -57,13 +83,29 @@ export default function App() {
       const data = await response.json()
       
       // Transform the new API response to match the expected format
-      const transformedData = {
-        ...data,
-        submission_id: data.id,
-        status: 'success',
-        timestamp: data.created_at,
-        model_used: data.analysis?.model_used || 'unknown',
-        review: data.analysis ? formatAnalysisText(data.analysis) : 'Analysis pending...'
+      let transformedData;
+      
+      if (type === 'github') {
+        // GitHub PR response has different structure
+        transformedData = {
+          ...data,
+          submission_id: data.id,
+          status: 'success',
+          timestamp: data.created_at,
+          model_used: data.model_used || 'GitHub Analysis',
+          review: formatPRAnalysisText(data),
+          pr_data: data // Store full PR data for display
+        }
+      } else {
+        // Regular code submission response
+        transformedData = {
+          ...data,
+          submission_id: data.id,
+          status: 'success',
+          timestamp: data.created_at,
+          model_used: data.analysis?.model_used || 'unknown',
+          review: data.analysis ? formatAnalysisText(data.analysis) : 'Analysis pending...'
+        }
       }
       
       setReviewData(transformedData)
@@ -93,6 +135,29 @@ Issues Found:
 ${issuesText}
 
 ${analysis.analysis_summary}
+    `.trim()
+  }
+
+  const formatPRAnalysisText = (prData: any) => {
+    const issues = prData.pr_issues || []
+    const issuesText = issues.map((issue: any) => 
+      `**${issue.title}** (${issue.severity.toUpperCase()})\n` +
+      `File: ${issue.file_path || 'N/A'}\n` +
+      `${issue.description}`
+    ).join('\n\n')
+    
+    return `
+Pull Request: ${prData.pr_title || 'Untitled'}
+Repository: ${prData.repository}
+Overall Score: ${prData.overall_score || 'N/A'}/100
+
+Files Changed: ${prData.files_changed?.length || 0}
+Additions: +${prData.additions || 0} Deletions: -${prData.deletions || 0}
+
+Issues Found (${issues.length}):
+${issuesText || 'No issues found'}
+
+${prData.analysis_summary || 'Analysis completed'}
     `.trim()
   }
 
@@ -194,7 +259,10 @@ ${analysis.analysis_summary}
                 Report
               </button>
             )}
-            <ThemeToggle />
+            <GitHubAuth onUserChange={setUser} />
+            <div className="ms-3">
+              <ThemeToggle />
+            </div>
           </div>
         </Container>
       </Navbar>
@@ -208,7 +276,7 @@ ${analysis.analysis_summary}
         )}
         {currentPage === 'submit' && (
           <div className="animate-fade-in">
-            <SubmitCodePage onSubmit={handleCodeSubmit} />
+            <SubmitCodePage onSubmit={handleCodeSubmit} user={user} />
           </div>
         )}
         {currentPage === 'results' && reviewData && (

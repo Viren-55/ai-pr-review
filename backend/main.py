@@ -1,7 +1,8 @@
 """Enhanced FastAPI backend for code review using Azure OpenAI with AI agents."""
 
-from fastapi import FastAPI, HTTPException, Depends, File, UploadFile, Form
+from fastapi import FastAPI, HTTPException, Depends, File, UploadFile, Form, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 import os
 import logging
@@ -11,21 +12,32 @@ import uvicorn
 from openai import AzureOpenAI
 from typing import List, Optional
 import asyncio
+import httpx
 
 # Import our modules
 from database import get_db, create_tables, database
 from models import (
     CodeSubmission, CodeAnalysis, CodeIssue as DBCodeIssue,
     CodeSubmissionCreate, CodeSubmissionResponse, CodeAnalysisResponse, 
-    CodeIssueResponse, FixIssueRequest, FixIssueResponse, HealthResponse
+    CodeIssueResponse, FixIssueRequest, FixIssueResponse, HealthResponse,
+    # GitHub Authentication Models
+    GitHubUser, PRAnalysis, PRIssue,
+    GitHubUserResponse, GitHubPRRequest, PRAnalysisResponse, PRIssueResponse,
+    AuthCallbackRequest, AuthResponse
 )
 from ai_agents import (
     create_ai_orchestrator, create_code_fixer, 
     AIAgentOrchestrator, CodeFixerAgent
 )
+# GitHub Integration
+from auth import (
+    GitHubOAuth, GitHubAuthConfig, TokenManager, get_current_user, 
+    authenticate_github_user, create_session_token
+)
+from github_integration import GitHubClient, GitHubURLParser, PRAnalyzer
 
 # Load environment variables
-load_dotenv("../.env")
+load_dotenv(".env")  # Load from current directory (backend/)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -201,9 +213,13 @@ app = FastAPI(
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "https://localhost:3000"
+    ],  # Specific origins required when using credentials
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -290,12 +306,441 @@ async def health_check():
         database_connected=database_connected
     )
 
+# GitHub OAuth and Integration setup
+github_oauth_config = None
+github_oauth_client = None
+
+try:
+    github_oauth_config = GitHubAuthConfig.from_env()
+    github_oauth_client = GitHubOAuth(github_oauth_config)
+    logger.info("GitHub OAuth configured successfully")
+except ValueError as e:
+    logger.warning(f"GitHub OAuth not configured: {e}")
+except Exception as e:
+    logger.error(f"Failed to initialize GitHub OAuth: {e}")
+
 # Enhanced API endpoints
 
 @app.get("/test")
 async def test_endpoint():
     """Simple test endpoint without dependencies."""
     return {"message": "Backend is working!", "timestamp": datetime.now().isoformat()}
+
+# GitHub Authentication Endpoints
+
+@app.get("/auth/github/login")
+async def github_login():
+    """Initiate GitHub OAuth login flow."""
+    if not github_oauth_client:
+        raise HTTPException(
+            status_code=503, 
+            detail="GitHub OAuth not configured. Please set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET environment variables."
+        )
+    
+    try:
+        auth_url, state = github_oauth_client.generate_auth_url()
+        
+        # In a real application, you'd store the state in session/cache for CSRF protection
+        # For now, we'll just return it to be handled by the frontend
+        return {
+            "auth_url": auth_url,
+            "state": state
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to generate GitHub auth URL: {e}")
+        raise HTTPException(status_code=500, detail="Failed to initiate GitHub authentication")
+
+@app.post("/auth/github/callback", response_model=AuthResponse)
+async def github_callback(request: AuthCallbackRequest, response: Response, db: Session = Depends(get_db)):
+    """Handle GitHub OAuth callback."""
+    if not github_oauth_client:
+        raise HTTPException(status_code=503, detail="GitHub OAuth not configured")
+    
+    try:
+        # Exchange code for token
+        token_response = await github_oauth_client.exchange_code_for_token(
+            request.code, request.state
+        )
+        
+        access_token = token_response["access_token"]
+        
+        # Authenticate user and store in database
+        user = await authenticate_github_user(access_token, db)
+        
+        # Create session token
+        session_token = create_session_token(user.id, user.username)
+        
+        # Set session cookie
+        response.set_cookie(
+            key="session_token",
+            value=session_token,
+            httponly=True,
+            secure=False,  # Set to True in production with HTTPS
+            samesite="lax",
+            max_age=86400  # 24 hours
+        )
+        
+        return AuthResponse(
+            success=True,
+            user=GitHubUserResponse.from_orm(user),
+            session_token=session_token,
+            message=f"Successfully authenticated as {user.username}"
+        )
+        
+    except Exception as e:
+        logger.error(f"GitHub OAuth callback failed: {e}")
+        return AuthResponse(
+            success=False,
+            user=None,
+            session_token=None,
+            message=f"Authentication failed: {str(e)}"
+        )
+
+@app.get("/auth/user", response_model=GitHubUserResponse)
+async def get_current_authenticated_user(current_user: GitHubUser = Depends(get_current_user)):
+    """Get current authenticated user information."""
+    return GitHubUserResponse.from_orm(current_user)
+
+@app.post("/auth/logout")
+async def logout(response: Response):
+    """Logout user by clearing session cookie."""
+    response.delete_cookie("session_token")
+    return {"message": "Successfully logged out"}
+
+from pydantic import BaseModel
+
+class TokenRequest(BaseModel):
+    token: str
+
+@app.post("/auth/token/test")
+async def test_token(request: TokenRequest):
+    """Simple token test endpoint."""
+    try:
+        token = request.token
+        logger.info(f"Received token: {token[:10]}...")
+        
+        # Test GitHub API directly
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                "https://api.github.com/user",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Accept": "application/vnd.github+json",
+                    "User-Agent": "CodeReview-Platform/1.0"
+                }
+            )
+            
+        logger.info(f"GitHub response: {response.status_code}")
+        user_data = response.json() if response.status_code == 200 else None
+        
+        return {
+            "status": response.status_code,
+            "user": user_data.get("login") if user_data else None,
+            "token_prefix": token[:10]
+        }
+        
+    except Exception as e:
+        logger.error(f"Test error: {e}")
+        return {"error": str(e)}
+
+@app.post("/auth/token/validate", response_model=AuthResponse)
+async def validate_github_token(request: TokenRequest, http_response: Response, db: Session = Depends(get_db)):
+    """Validate GitHub token and create session."""
+    try:
+        token = request.token
+        if not token:
+            return AuthResponse(
+                success=False,
+                user=None,
+                session_token=None,
+                message="Token is required"
+            )
+
+        # Create a simple GitHub client to validate token
+        github_client = GitHubClient(token)
+        
+        try:
+            # Get user info from GitHub
+            async with httpx.AsyncClient() as client:
+                github_response = await client.get(
+                    "https://api.github.com/user",
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                        "Accept": "application/vnd.github+json",
+                        "User-Agent": "CodeReview-Platform/1.0"
+                    }
+                )
+                
+            logger.info(f"GitHub API response status: {github_response.status_code}")
+            
+            if github_response.status_code != 200:
+                logger.error(f"GitHub API error: {github_response.text}")
+                return AuthResponse(
+                    success=False,
+                    user=None,
+                    session_token=None,
+                    message=f"Invalid GitHub token: {github_response.status_code}"
+                )
+                
+            user_data = github_response.json()
+            logger.info(f"GitHub user data: {user_data.get('login', 'unknown')}")
+            
+            # Check if user exists or create new user
+            existing_user = db.query(GitHubUser).filter(
+                GitHubUser.github_id == user_data["id"]
+            ).first()
+            
+            if existing_user:
+                user = existing_user
+                # Update token
+                token_manager = TokenManager()
+                user.encrypted_token_data = token_manager.encrypt_token_data({"access_token": token})
+                db.commit()
+            else:
+                # Create new user
+                token_manager = TokenManager()
+                user = GitHubUser(
+                    github_id=user_data["id"],
+                    username=user_data["login"],
+                    email=user_data.get("email"),
+                    avatar_url=user_data.get("avatar_url"),
+                    encrypted_token_data=token_manager.encrypt_token_data({"access_token": token})
+                )
+                db.add(user)
+                db.commit()
+                db.refresh(user)
+            
+            # Create session token
+            session_token = create_session_token(user.id, user.username)
+            
+            # Set session cookie
+            http_response.set_cookie(
+                key="session_token",
+                value=session_token,
+                httponly=True,
+                secure=False,
+                samesite="lax",
+                max_age=86400
+            )
+            
+            return AuthResponse(
+                success=True,
+                user=GitHubUserResponse.from_orm(user),
+                session_token=session_token,
+                message=f"Successfully authenticated as {user.username}"
+            )
+            
+        except Exception as e:
+            logger.error(f"GitHub API error: {e}")
+            return AuthResponse(
+                success=False,
+                user=None,
+                session_token=None,
+                message=f"GitHub API error: {str(e)}"
+            )
+            
+    except Exception as e:
+        logger.error(f"Token validation failed: {e}")
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
+        return AuthResponse(
+            success=False,
+            user=None,
+            session_token=None,
+            message=f"Authentication failed: {str(e)}"
+        )
+
+# GitHub PR Analysis Endpoints
+
+@app.post("/api/github/pr/analyze", response_model=PRAnalysisResponse)
+async def analyze_github_pr(
+    request: GitHubPRRequest, 
+    current_user: GitHubUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Analyze a GitHub Pull Request."""
+    try:
+        # Parse and validate PR URL
+        pr_info = GitHubURLParser.parse_pr_url(request.github_url)
+        if not pr_info:
+            raise HTTPException(status_code=400, detail="Invalid GitHub PR URL")
+        
+        # Check if we already have this PR analysis
+        existing_analysis = db.query(PRAnalysis).filter(
+            PRAnalysis.user_id == current_user.id,
+            PRAnalysis.pr_url == request.github_url
+        ).first()
+        
+        if existing_analysis and existing_analysis.analysis_status == "completed":
+            logger.info(f"Returning existing analysis for PR {pr_info.full_repo}#{pr_info.pr_number}")
+            return PRAnalysisResponse.from_orm(existing_analysis)
+        
+        # Create new analysis record
+        if not existing_analysis:
+            pr_analysis = PRAnalysis(
+                user_id=current_user.id,
+                pr_url=request.github_url,
+                repository=pr_info.full_repo,
+                pr_number=pr_info.pr_number,
+                analysis_status="pending"
+            )
+            db.add(pr_analysis)
+            db.commit()
+            db.refresh(pr_analysis)
+        else:
+            pr_analysis = existing_analysis
+            pr_analysis.analysis_status = "pending"
+            pr_analysis.error_message = None
+            db.commit()
+        
+        # Get user's GitHub token
+        token_manager = TokenManager()
+        github_token = token_manager.extract_access_token(current_user.encrypted_token_data)
+        
+        # Initialize GitHub client and PR analyzer
+        github_client = GitHubClient(github_token)
+        
+        if is_demo_mode():
+            # Use mock analysis for demo mode
+            logger.info("Running PR analysis in demo mode")
+            mock_analysis = {
+                "pr_info": {
+                    "url": request.github_url,
+                    "repository": pr_info.full_repo,
+                    "pr_number": pr_info.pr_number,
+                    "title": "Demo PR Analysis",
+                    "description": "This is a demo analysis",
+                    "author": "demo-user",
+                    "created_at": datetime.now().isoformat(),
+                    "state": "open"
+                },
+                "changes_summary": {
+                    "files_changed": 3,
+                    "additions": 50,
+                    "deletions": 10,
+                    "changed_files": ["src/main.py", "tests/test_main.py", "README.md"]
+                },
+                "analysis": {
+                    "overall_score": 75,
+                    "issues": [
+                        {
+                            "title": "Potential security issue",
+                            "description": "Input validation may be insufficient",
+                            "severity": "medium",
+                            "category": "security",
+                            "file_path": "src/main.py",
+                            "line_number": 42,
+                            "suggested_fix": "Add proper input validation",
+                            "fix_explanation": "Validate all user inputs before processing"
+                        }
+                    ],
+                    "analysis_summary": "PR analysis completed in demo mode with 1 medium-severity issue found.",
+                    "files_analyzed": 2
+                }
+            }
+            
+            analysis_results = mock_analysis
+            
+        else:
+            # Get AI orchestrator
+            orchestrator = get_ai_orchestrator()
+            if not orchestrator:
+                await github_client.close()
+                raise HTTPException(status_code=503, detail="AI analysis service not available")
+            
+            # Run real PR analysis
+            pr_analyzer = PRAnalyzer(github_client, orchestrator)
+            analysis_results = await pr_analyzer.analyze_pr(request.github_url, request.language)
+        
+        # Update PR analysis record with results
+        pr_data = analysis_results["pr_info"]
+        changes_data = analysis_results["changes_summary"]
+        ai_analysis = analysis_results["analysis"]
+        
+        pr_analysis.pr_title = pr_data["title"]
+        pr_analysis.pr_description = pr_data.get("description")
+        pr_analysis.overall_score = ai_analysis["overall_score"]
+        pr_analysis.analysis_summary = ai_analysis["analysis_summary"]
+        pr_analysis.model_used = os.getenv("REASONING_MODEL", "demo")
+        pr_analysis.analysis_time_seconds = analysis_results["metadata"]["analysis_time_seconds"]
+        pr_analysis.files_changed = changes_data["changed_files"]
+        pr_analysis.additions = changes_data["additions"]
+        pr_analysis.deletions = changes_data["deletions"]
+        pr_analysis.analysis_status = "completed"
+        
+        db.commit()
+        
+        # Create PR issues
+        db_issues = []
+        for issue_data in ai_analysis["issues"]:
+            pr_issue = PRIssue(
+                pr_analysis_id=pr_analysis.id,
+                title=issue_data["title"],
+                description=issue_data["description"],
+                severity=issue_data["severity"],
+                category=issue_data["category"],
+                file_path=issue_data.get("file_path"),
+                line_number=issue_data.get("line_number"),
+                code_snippet=issue_data.get("code_snippet"),
+                suggested_fix=issue_data.get("suggested_fix"),
+                fix_explanation=issue_data.get("fix_explanation")
+            )
+            db.add(pr_issue)
+            db_issues.append(pr_issue)
+        
+        db.commit()
+        
+        # Refresh all objects
+        db.refresh(pr_analysis)
+        for issue in db_issues:
+            db.refresh(issue)
+        
+        await github_client.close()
+        
+        logger.info(f"PR analysis completed for {pr_info.full_repo}#{pr_info.pr_number}")
+        return PRAnalysisResponse.from_orm(pr_analysis)
+        
+    except Exception as e:
+        # Update analysis record with error
+        if 'pr_analysis' in locals():
+            pr_analysis.analysis_status = "failed"
+            pr_analysis.error_message = str(e)
+            db.commit()
+        
+        logger.error(f"PR analysis failed: {e}")
+        raise HTTPException(status_code=500, detail=f"PR analysis failed: {str(e)}")
+
+@app.get("/api/github/pr/{analysis_id}", response_model=PRAnalysisResponse) 
+async def get_pr_analysis(
+    analysis_id: int,
+    current_user: GitHubUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get a specific PR analysis."""
+    analysis = db.query(PRAnalysis).filter(
+        PRAnalysis.id == analysis_id,
+        PRAnalysis.user_id == current_user.id
+    ).first()
+    
+    if not analysis:
+        raise HTTPException(status_code=404, detail="PR analysis not found")
+    
+    return PRAnalysisResponse.from_orm(analysis)
+
+@app.get("/api/github/pr/analyses", response_model=List[PRAnalysisResponse])
+async def list_pr_analyses(
+    current_user: GitHubUser = Depends(get_current_user),
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db)
+):
+    """List user's PR analyses."""
+    analyses = db.query(PRAnalysis).filter(
+        PRAnalysis.user_id == current_user.id
+    ).offset(skip).limit(limit).order_by(PRAnalysis.created_at.desc()).all()
+    
+    return [PRAnalysisResponse.from_orm(analysis) for analysis in analyses]
 
 @app.post("/api/submissions/mock")
 async def create_mock_submission(request: dict):
