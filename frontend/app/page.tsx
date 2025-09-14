@@ -37,8 +37,8 @@ export default function App() {
           body: formData
         })
       } else {
-        // For direct code submission - use mock endpoint for testing
-        response = await fetch('http://localhost:8000/api/submissions/mock', {
+        // For direct code submission - use real API endpoint
+        response = await fetch('http://localhost:8000/api/submissions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
