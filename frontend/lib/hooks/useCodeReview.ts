@@ -179,12 +179,15 @@ export function useCodeReview() {
         const codeContent = analysisData.code_content
         let displayCode = ''
         
-        if (codeContent?.extracted_code) {
+        if (codeContent?.formatted_diff) {
+          // Use formatted diff (best for display with file names and line numbers)
+          displayCode = codeContent.formatted_diff
+        } else if (codeContent?.diff) {
+          // Fallback to raw diff content
+          displayCode = codeContent.diff
+        } else if (codeContent?.extracted_code) {
           // Use extracted code (clean, analyzable content)
           displayCode = codeContent.extracted_code
-        } else if (codeContent?.diff) {
-          // Fallback to diff content if no extracted code
-          displayCode = codeContent.diff
         } else {
           // Final fallback - show file list
           const fileList = analysisData.changes_summary?.changed_files || []

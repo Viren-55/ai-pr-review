@@ -102,6 +102,7 @@ class PRAnalyzer:
                 "code_content": {
                     "diff": diff_content,
                     "extracted_code": analyzable_content,
+                    "formatted_diff": self._format_diff_for_display(diff_content, files_data, language),
                     "files_data": files_data
                 },
                 "analysis": {
@@ -172,6 +173,73 @@ class PRAnalyzer:
                 code_lines.append(line[1:])  # Remove space prefix
         
         return '\n'.join(code_lines)
+    
+    def _format_diff_for_display(self, diff_content: str, files_data: List[Dict], language: str) -> str:
+        """Format diff content for better display in the frontend.
+        
+        Args:
+            diff_content: Full PR diff content
+            files_data: List of changed files
+            language: Target programming language
+            
+        Returns:
+            str: Formatted diff content for display
+        """
+        # Filter files by language and relevance
+        relevant_files = [f for f in files_data if self._should_analyze_file(f["filename"], language)]
+        
+        if not relevant_files:
+            # If no relevant files for the language, show all files with changes
+            relevant_files = [f for f in files_data if f.get("changes", 0) > 0]
+        
+        if not relevant_files:
+            return "No code changes found in this PR."
+        
+        # Parse diff content to create a readable format
+        formatted_lines = []
+        current_file = None
+        file_started = False
+        line_number = 0
+        
+        for line in diff_content.split('\n'):
+            # Track file changes
+            if line.startswith('diff --git'):
+                current_file = line.split(' b/')[-1] if ' b/' in line else None
+                file_started = False
+                continue
+            
+            # Start of file content
+            if line.startswith('@@') and current_file:
+                if any(f["filename"] == current_file for f in relevant_files):
+                    if not file_started:
+                        formatted_lines.append(f"\n=== {current_file} ===")
+                        file_started = True
+                    # Extract line numbers from @@ header
+                    formatted_lines.append(line)
+                    line_number = 1
+                continue
+            
+            # Skip if not in a relevant file
+            if not current_file or not any(f["filename"] == current_file for f in relevant_files):
+                continue
+            
+            # Skip diff metadata
+            if line.startswith('+++') or line.startswith('---'):
+                continue
+                
+            # Include all diff lines (context, additions, deletions)
+            if file_started and line_number < 1000:  # Limit to prevent huge displays
+                if line.startswith('+'):
+                    formatted_lines.append(f"{line_number:3}: {line}")
+                elif line.startswith('-'):
+                    formatted_lines.append(f"{line_number:3}: {line}")
+                elif line.startswith(' '):
+                    formatted_lines.append(f"{line_number:3}: {line}")
+                else:
+                    formatted_lines.append(line)
+                line_number += 1
+        
+        return '\n'.join(formatted_lines) if formatted_lines else "No displayable code changes found."
     
     def _should_analyze_file(self, filename: str, target_language: str) -> bool:
         """Check if file should be analyzed based on language and type.
