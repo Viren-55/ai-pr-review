@@ -48,323 +48,229 @@ class PRAnalyzer:
             
             logger.info(f"Starting analysis for PR {pr_info.full_repo}#{pr_info.pr_number}")
             
-            # Fetch PR data from GitHub
-            pr_data = await self._fetch_pr_data(pr_info)
+            # Fetch PR information
+            pr_data = await self.github_client.get_pr_info(pr_info)
             
-            # Extract and analyze code changes
-            analysis_results = await self._analyze_pr_changes(pr_info, pr_data, language)
+            # Fetch PR diff
+            diff_content = await self.github_client.get_pr_diff(pr_info)
+            
+            # Fetch changed files
+            files_data = await self.github_client.get_pr_files(pr_info)
+            
+            # Extract meaningful code changes for analysis
+            analyzable_content = self._extract_code_changes(diff_content, files_data, language)
+            
+            # Run AI analysis on the changes
+            if analyzable_content:
+                issues, score, summary = await self.ai_orchestrator.analyze_code(
+                    analyzable_content, 
+                    language
+                )
+            else:
+                # No analyzable code found
+                issues = []
+                score = 100
+                summary = "No significant code changes found for analysis"
             
             # Calculate analysis time
             analysis_time = (datetime.now() - start_time).total_seconds()
             
-            # Combine all results
-            complete_analysis = {
+            # Build comprehensive analysis result
+            result = {
                 "pr_info": {
                     "url": pr_url,
                     "repository": pr_info.full_repo,
                     "pr_number": pr_info.pr_number,
-                    "title": pr_data["title"],
-                    "description": pr_data["body"],
-                    "author": pr_data["user"]["login"],
-                    "created_at": pr_data["created_at"],
-                    "state": pr_data["state"]
+                    "title": pr_data.get("title", ""),
+                    "description": pr_data.get("body", ""),
+                    "author": pr_data.get("user", {}).get("login", ""),
+                    "created_at": pr_data.get("created_at", ""),
+                    "updated_at": pr_data.get("updated_at", ""),
+                    "state": pr_data.get("state", ""),
+                    "merged": pr_data.get("merged", False),
+                    "mergeable": pr_data.get("mergeable"),
+                    "base_branch": pr_data.get("base", {}).get("ref", ""),
+                    "head_branch": pr_data.get("head", {}).get("ref", "")
                 },
                 "changes_summary": {
-                    "files_changed": len(pr_data["files"]),
-                    "additions": pr_data["additions"],
-                    "deletions": pr_data["deletions"],
-                    "changed_files": [f["filename"] for f in pr_data["files"]]
+                    "files_changed": len(files_data),
+                    "additions": pr_data.get("additions", 0),
+                    "deletions": pr_data.get("deletions", 0),
+                    "changed_files": [f["filename"] for f in files_data],
+                    "file_types": self._categorize_file_changes(files_data)
                 },
-                "analysis": analysis_results,
+                "code_content": {
+                    "diff": diff_content,
+                    "extracted_code": analyzable_content,
+                    "files_data": files_data
+                },
+                "analysis": {
+                    "overall_score": score,
+                    "issues": [self._format_issue(issue, file_data) for issue in issues],
+                    "analysis_summary": summary,
+                    "files_analyzed": len([f for f in files_data if self._should_analyze_file(f["filename"], language)]),
+                    "total_lines_analyzed": len(analyzable_content.split('\n')) if analyzable_content else 0
+                },
                 "metadata": {
+                    "analysis_time_seconds": analysis_time,
                     "analyzed_at": datetime.now().isoformat(),
-                    "analysis_time_seconds": int(analysis_time),
-                    "language": language
+                    "language": language,
+                    "diff_size": len(diff_content)
                 }
             }
             
-            logger.info(f"PR analysis completed in {analysis_time:.2f}s")
-            return complete_analysis
+            logger.info(
+                f"Completed PR analysis: {len(issues)} issues found, "
+                f"score: {score}, time: {analysis_time:.2f}s"
+            )
+            
+            return result
             
         except GitHubAPIError as e:
             logger.error(f"GitHub API error during PR analysis: {e}")
-            raise PRAnalysisError(f"GitHub API error: {str(e)}")
+            raise PRAnalysisError(f"Failed to fetch PR data: {str(e)}")
         except Exception as e:
             logger.error(f"Unexpected error during PR analysis: {e}")
             raise PRAnalysisError(f"Analysis failed: {str(e)}")
     
-    async def _fetch_pr_data(self, pr_info: GitHubPRInfo) -> Dict[str, Any]:
-        """Fetch comprehensive PR data from GitHub.
+    def _extract_code_changes(self, diff_content: str, files_data: List[Dict], language: str) -> str:
+        """Extract meaningful code changes from diff for AI analysis.
         
         Args:
-            pr_info: Parsed PR information
-            
-        Returns:
-            dict: Combined PR data including files and metadata
-        """
-        # Fetch PR information and files in parallel
-        import asyncio
-        
-        pr_data, files_data = await asyncio.gather(
-            self.github_client.get_pr_info(pr_info),
-            self.github_client.get_pr_files(pr_info)
-        )
-        
-        # Add files data to PR data
-        pr_data["files"] = files_data
-        
-        # Calculate total additions/deletions
-        pr_data["additions"] = sum(file.get("additions", 0) for file in files_data)
-        pr_data["deletions"] = sum(file.get("deletions", 0) for file in files_data)
-        
-        return pr_data
-    
-    async def _analyze_pr_changes(self, pr_info: GitHubPRInfo, pr_data: Dict[str, Any], language: str) -> Dict[str, Any]:
-        """Analyze the code changes in the PR using AI agents.
-        
-        Args:
-            pr_info: PR information
-            pr_data: GitHub PR data including files
-            language: Programming language
-            
-        Returns:
-            dict: AI analysis results
-        """
-        # Filter files to analyze (exclude non-code files)
-        analyzable_files = self._filter_analyzable_files(pr_data["files"], language)
-        
-        if not analyzable_files:
-            logger.warning(f"No analyzable files found for language {language}")
-            return {
-                "overall_score": 100,
-                "issues": [],
-                "analysis_summary": f"No {language} files found to analyze in this PR.",
-                "files_analyzed": 0
-            }
-        
-        # Extract code changes for analysis
-        code_changes = await self._extract_code_changes(pr_info, analyzable_files)
-        
-        # Run AI analysis on the combined changes
-        all_issues = []
-        total_score = 0
-        files_analyzed = 0
-        
-        for file_path, file_content in code_changes.items():
-            try:
-                # Run AI orchestrator on this file's changes
-                file_issues, file_score, file_summary = await self.ai_orchestrator.analyze_code(
-                    file_content, language
-                )
-                
-                # Add file path to each issue
-                for issue in file_issues:
-                    issue.file_path = file_path
-                
-                all_issues.extend(file_issues)
-                total_score += file_score
-                files_analyzed += 1
-                
-                logger.info(f"Analyzed {file_path}: {len(file_issues)} issues, score {file_score}")
-                
-            except Exception as e:
-                logger.error(f"Failed to analyze {file_path}: {e}")
-                # Continue with other files
-                continue
-        
-        # Calculate overall score
-        overall_score = total_score // max(files_analyzed, 1) if files_analyzed > 0 else 100
-        
-        # Generate summary
-        analysis_summary = self._generate_pr_summary(all_issues, files_analyzed, pr_data)
-        
-        return {
-            "overall_score": overall_score,
-            "issues": [self._issue_to_dict(issue) for issue in all_issues],
-            "analysis_summary": analysis_summary,
-            "files_analyzed": files_analyzed
-        }
-    
-    def _filter_analyzable_files(self, files: List[Dict[str, Any]], language: str) -> List[Dict[str, Any]]:
-        """Filter files that can be analyzed for the given language.
-        
-        Args:
-            files: List of changed files from GitHub
+            diff_content: Full PR diff content
+            files_data: List of changed files
             language: Target programming language
             
         Returns:
-            list: Filtered list of analyzable files
+            str: Extracted code content for analysis
         """
-        # Language file extensions mapping
-        language_extensions = {
-            "python": [".py", ".pyx", ".pyw"],
-            "javascript": [".js", ".jsx", ".mjs"],
-            "typescript": [".ts", ".tsx"],
-            "java": [".java"],
-            "cpp": [".cpp", ".cc", ".cxx", ".c++", ".h", ".hpp"],
-            "c": [".c", ".h"],
-            "csharp": [".cs"],
-            "go": [".go"],
-            "rust": [".rs"],
-            "php": [".php"],
-            "ruby": [".rb"]
-        }
+        # Filter files by language and relevance
+        relevant_files = [f for f in files_data if self._should_analyze_file(f["filename"], language)]
         
-        extensions = language_extensions.get(language.lower(), [])
-        if not extensions:
-            logger.warning(f"No known extensions for language: {language}")
-            return files  # Return all files if language not recognized
+        if not relevant_files:
+            return ""
         
-        analyzable_files = []
-        for file in files:
-            filename = file["filename"].lower()
+        # Extract added/modified lines from diff
+        code_lines = []
+        current_file = None
+        
+        for line in diff_content.split('\n'):
+            # Track current file
+            if line.startswith('diff --git'):
+                current_file = line.split(' b/')[-1] if ' b/' in line else None
+                continue
             
-            # Check if file has relevant extension
-            if any(filename.endswith(ext) for ext in extensions):
-                # Skip deleted files
-                if file["status"] != "removed":
-                    # Skip binary files and very large files
-                    if file.get("changes", 0) <= 1000:  # Limit to reasonable size
-                        analyzable_files.append(file)
-        
-        logger.info(f"Filtered {len(analyzable_files)} analyzable files from {len(files)} total files")
-        return analyzable_files
-    
-    async def _extract_code_changes(self, pr_info: GitHubPRInfo, files: List[Dict[str, Any]]) -> Dict[str, str]:
-        """Extract the actual code changes from files.
-        
-        Args:
-            pr_info: PR information
-            files: List of files to analyze
-            
-        Returns:
-            dict: Mapping of file_path -> code_content
-        """
-        code_changes = {}
-        
-        for file in files:
-            file_path = file["filename"]
-            
-            try:
-                if file["status"] == "added":
-                    # For new files, get the entire content
-                    content = await self.github_client.get_file_content(
-                        pr_info.owner, pr_info.repo, file_path, "HEAD"
-                    )
-                elif file["status"] == "modified":
-                    # For modified files, we could get just the patch or the full content
-                    # For simplicity, we'll analyze the current content
-                    # In a more sophisticated implementation, we'd analyze just the changes
-                    content = await self.github_client.get_file_content(
-                        pr_info.owner, pr_info.repo, file_path, "HEAD"
-                    )
-                else:
-                    # Skip renamed/deleted files for now
-                    continue
+            # Skip if not a relevant file
+            if current_file and not any(f["filename"] == current_file for f in relevant_files):
+                continue
                 
-                code_changes[file_path] = content
-                
-            except GitHubAPIError as e:
-                logger.warning(f"Failed to fetch content for {file_path}: {e}")
-                # Use patch content as fallback if available
-                if "patch" in file and file["patch"]:
-                    code_changes[file_path] = self._extract_code_from_patch(file["patch"])
-        
-        return code_changes
-    
-    def _extract_code_from_patch(self, patch: str) -> str:
-        """Extract code lines from a git patch.
-        
-        Args:
-            patch: Git patch content
-            
-        Returns:
-            str: Extracted code content
-        """
-        lines = []
-        for line in patch.split('\n'):
-            # Extract lines that are added (start with +) or context (no prefix)
+            # Extract added lines (starting with +) but skip diff metadata
             if line.startswith('+') and not line.startswith('+++'):
-                lines.append(line[1:])  # Remove + prefix
-            elif not line.startswith('-') and not line.startswith('@@') and not line.startswith('+++') and not line.startswith('---'):
-                lines.append(line)
+                code_lines.append(line[1:])  # Remove + prefix
+            # Also include context lines for better analysis
+            elif line.startswith(' '):
+                code_lines.append(line[1:])  # Remove space prefix
         
-        return '\n'.join(lines)
+        return '\n'.join(code_lines)
     
-    def _generate_pr_summary(self, issues: List[CodeIssue], files_analyzed: int, pr_data: Dict[str, Any]) -> str:
-        """Generate human-readable summary of PR analysis.
+    def _should_analyze_file(self, filename: str, target_language: str) -> bool:
+        """Check if file should be analyzed based on language and type.
         
         Args:
-            issues: List of found issues
-            files_analyzed: Number of files analyzed
-            pr_data: GitHub PR data
+            filename: Name of the file
+            target_language: Target programming language
             
         Returns:
-            str: Analysis summary
+            bool: True if file should be analyzed
         """
-        # Count issues by severity
-        severity_counts = {
-            'critical': len([i for i in issues if i.severity == 'critical']),
-            'high': len([i for i in issues if i.severity == 'high']),
-            'medium': len([i for i in issues if i.severity == 'medium']),
-            'low': len([i for i in issues if i.severity == 'low'])
+        # Language-specific file extensions
+        language_extensions = {
+            'python': ['.py', '.pyx', '.pyi'],
+            'javascript': ['.js', '.jsx', '.mjs'],
+            'typescript': ['.ts', '.tsx'],
+            'java': ['.java'],
+            'cpp': ['.cpp', '.cxx', '.cc', '.c++', '.c', '.h', '.hpp'],
+            'csharp': ['.cs'],
+            'go': ['.go'],
+            'rust': ['.rs'],
+            'php': ['.php', '.php3', '.php4', '.php5'],
+            'ruby': ['.rb', '.rake']
         }
         
-        # Count issues by category
-        category_counts = {}
-        for issue in issues:
-            category_counts[issue.category] = category_counts.get(issue.category, 0) + 1
-        
-        summary_lines = [
-            f"Pull Request Analysis for #{pr_data.get('number', '?')}: {pr_data.get('title', 'Untitled')}",
-            f"Files analyzed: {files_analyzed}/{len(pr_data.get('files', []))}",
-            f"Total changes: +{pr_data.get('additions', 0)} -{pr_data.get('deletions', 0)}",
-            "",
-            f"Issues found: {len(issues)}"
+        # Skip non-code files
+        skip_patterns = [
+            r'\.md$', r'\.txt$', r'\.json$', r'\.xml$', r'\.yml$', r'\.yaml$',
+            r'\.lock$', r'package-lock\.json$', r'yarn\.lock$', r'Pipfile\.lock$',
+            r'\.gitignore$', r'\.dockerignore$', r'Dockerfile$', r'README',
+            r'\.png$', r'\.jpg$', r'\.jpeg$', r'\.gif$', r'\.svg$', r'\.ico$'
         ]
         
-        if severity_counts:
-            severity_parts = []
-            for severity in ['critical', 'high', 'medium', 'low']:
-                count = severity_counts[severity]
-                if count > 0:
-                    severity_parts.append(f"{count} {severity}")
-            
-            if severity_parts:
-                summary_lines.append(f"  By severity: {', '.join(severity_parts)}")
+        # Skip if matches skip patterns
+        for pattern in skip_patterns:
+            if re.search(pattern, filename, re.IGNORECASE):
+                return False
         
-        if category_counts:
-            category_parts = [f"{count} {category}" for category, count in category_counts.items()]
-            summary_lines.append(f"  By category: {', '.join(category_parts)}")
+        # Check for target language extensions
+        target_exts = language_extensions.get(target_language, [])
+        if target_exts:
+            return any(filename.lower().endswith(ext) for ext in target_exts)
         
-        if not issues:
-            summary_lines.append("No significant issues found. Code quality looks good!")
-        elif severity_counts.get('critical', 0) > 0:
-            summary_lines.append("⚠️ Critical issues found that should be addressed before merging.")
-        elif severity_counts.get('high', 0) > 0:
-            summary_lines.append("⚠️ High-priority issues found that should be reviewed.")
-        else:
-            summary_lines.append("Minor issues found. Consider addressing for better code quality.")
-        
-        return '\n'.join(summary_lines)
+        # If no specific language, analyze common code files
+        all_code_exts = [ext for exts in language_extensions.values() for ext in exts]
+        return any(filename.lower().endswith(ext) for ext in all_code_exts)
     
-    def _issue_to_dict(self, issue: CodeIssue) -> Dict[str, Any]:
-        """Convert CodeIssue to dictionary for API response.
+    def _categorize_file_changes(self, files_data: List[Dict]) -> Dict[str, int]:
+        """Categorize file changes by type.
         
         Args:
-            issue: CodeIssue object
+            files_data: List of changed files
             
         Returns:
-            dict: Issue data
+            dict: Count of changes by file category
+        """
+        categories = {
+            'source_code': 0,
+            'tests': 0,
+            'documentation': 0,
+            'configuration': 0,
+            'other': 0
+        }
+        
+        for file_data in files_data:
+            filename = file_data["filename"].lower()
+            
+            # Categorize files
+            if any(test_pattern in filename for test_pattern in ['test', 'spec', '__test__']):
+                categories['tests'] += 1
+            elif filename.endswith(('.md', '.rst', '.txt', '.doc')):
+                categories['documentation'] += 1
+            elif filename.endswith(('.json', '.yml', '.yaml', '.toml', '.ini', '.cfg', '.conf')):
+                categories['configuration'] += 1
+            elif any(filename.endswith(ext) for ext in ['.py', '.js', '.ts', '.java', '.cpp', '.c', '.go', '.rs', '.php', '.rb', '.cs']):
+                categories['source_code'] += 1
+            else:
+                categories['other'] += 1
+        
+        return categories
+    
+    def _format_issue(self, issue: CodeIssue, file_context: Optional[Dict] = None) -> Dict[str, Any]:
+        """Format an AI-generated issue for PR analysis output.
+        
+        Args:
+            issue: Code issue from AI analysis
+            file_context: Optional file context information
+            
+        Returns:
+            dict: Formatted issue data
         """
         return {
             "title": issue.title,
             "description": issue.description,
             "severity": issue.severity,
             "category": issue.category,
-            "file_path": getattr(issue, 'file_path', None),
             "line_number": issue.line_number,
             "code_snippet": issue.code_snippet,
             "suggested_fix": issue.suggested_fix,
-            "fix_explanation": issue.fix_explanation
+            "fix_explanation": issue.fix_explanation,
+            "file_path": file_context.get("filename") if file_context else None
         }

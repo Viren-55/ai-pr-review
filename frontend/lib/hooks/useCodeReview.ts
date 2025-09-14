@@ -175,6 +175,22 @@ export function useCodeReview() {
         // ReviewResultsPage expects analysis.issues structure
         const analysisData = response.data.analysis
         
+        // Extract actual code content for display in the middle pane
+        const codeContent = analysisData.code_content
+        let displayCode = ''
+        
+        if (codeContent?.extracted_code) {
+          // Use extracted code (clean, analyzable content)
+          displayCode = codeContent.extracted_code
+        } else if (codeContent?.diff) {
+          // Fallback to diff content if no extracted code
+          displayCode = codeContent.diff
+        } else {
+          // Final fallback - show file list
+          const fileList = analysisData.changes_summary?.changed_files || []
+          displayCode = `GitHub PR: ${analysisData.pr_info?.title || prUrl}\n\nChanged files:\n${fileList.map(f => `- ${f}`).join('\n')}`
+        }
+        
         // Transform to the format ReviewResultsPage expects
         const transformedData = {
           analysis: {
@@ -197,6 +213,7 @@ export function useCodeReview() {
           },
           pr_info: analysisData.pr_info,
           changes_summary: analysisData.changes_summary,
+          code_content: codeContent,
           metadata: analysisData.metadata,
           timestamp: response.data.timestamp,
           demo_mode: response.data.demo_mode,
@@ -204,7 +221,7 @@ export function useCodeReview() {
           // Add additional fields for compatibility
           filename: analysisData.pr_info?.title || 'GitHub PR',
           language: language,
-          original_code: `GitHub PR: ${prUrl}`,
+          original_code: displayCode,  // Use actual code content instead of just the URL
           thread_id: `pr-review-${analysisData.pr_info.pr_number}-${Date.now()}`
         }
         
