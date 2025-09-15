@@ -79,8 +79,8 @@ def get_code_fixer():
 
 def is_demo_mode():
     """Check if we're running in demo mode."""
-    api_key = os.getenv("REASONING_AZURE_OPENAI_API_KEY")
-    return azure_client is None or api_key in ["your-api-key-here", "demo-mode"]
+    # Force disable demo mode to use real PR analysis
+    return False
 
 def generate_mock_analysis(code: str, language: str):
     """Generate realistic mock analysis based on actual code patterns."""
@@ -269,19 +269,10 @@ async def health_check():
             # Test Azure OpenAI connection
             model_name = os.getenv("REASONING_MODEL")
             
-            if "o4" in model_name or "o1" in model_name:
-                response = azure_client.chat.completions.create(
-                    model=model_name,
-                    messages=[{"role": "user", "content": "Hello, respond with just 'OK'"}],
-                    temperature=1.0,
-                    max_completion_tokens=10
-                )
-            else:
-                response = azure_client.chat.completions.create(
-                    model=model_name,
-                    messages=[{"role": "user", "content": "Hello, respond with just 'OK'"}],
-                    max_tokens=10
-                )
+            response = azure_client.chat.completions.create(
+                model=model_name,
+                messages=[{"role": "user", "content": "Hello, respond with just 'OK'"}]
+            )
             
             azure_connected = True
             logger.info("Azure OpenAI connection successful")
@@ -412,6 +403,12 @@ from pydantic import BaseModel
 
 class TokenRequest(BaseModel):
     token: str
+
+class PRReviewRequest(BaseModel):
+    github_url: str
+    language: str = "python"
+    create_github_review: bool = False
+    review_type: str = "COMMENT"  # APPROVE, REQUEST_CHANGES, COMMENT
 
 @app.post("/auth/token/test")
 async def test_token(request: TokenRequest):
@@ -601,46 +598,114 @@ async def analyze_github_pr(
         # Initialize GitHub client and PR analyzer
         github_client = GitHubClient(github_token)
         
+        # Also initialize CLI tools for comprehensive analysis
+        try:
+            from tools import AIGitHubToolkit
+            github_toolkit = AIGitHubToolkit(github_token)
+        except ImportError as e:
+            logger.warning(f"GitHub CLI tools not available: {e}")
+            github_toolkit = None
+        
         if is_demo_mode():
-            # Use mock analysis for demo mode
-            logger.info("Running PR analysis in demo mode")
-            mock_analysis = {
-                "pr_info": {
-                    "url": request.github_url,
-                    "repository": pr_info.full_repo,
-                    "pr_number": pr_info.pr_number,
-                    "title": "Demo PR Analysis",
-                    "description": "This is a demo analysis",
-                    "author": "demo-user",
-                    "created_at": datetime.now().isoformat(),
-                    "state": "open"
-                },
-                "changes_summary": {
-                    "files_changed": 3,
-                    "additions": 50,
-                    "deletions": 10,
-                    "changed_files": ["src/main.py", "tests/test_main.py", "README.md"]
-                },
-                "analysis": {
-                    "overall_score": 75,
-                    "issues": [
-                        {
-                            "title": "Potential security issue",
-                            "description": "Input validation may be insufficient",
-                            "severity": "medium",
-                            "category": "security",
-                            "file_path": "src/main.py",
-                            "line_number": 42,
-                            "suggested_fix": "Add proper input validation",
-                            "fix_explanation": "Validate all user inputs before processing"
-                        }
-                    ],
-                    "analysis_summary": "PR analysis completed in demo mode with 1 medium-severity issue found.",
-                    "files_analyzed": 2
-                }
-            }
+            # Use real GitHub data but mock AI analysis for demo mode
+            logger.info("Running PR analysis in demo mode - fetching real PR data")
             
-            analysis_results = mock_analysis
+            try:
+                # Fetch real PR data even in demo mode
+                pr_data = await github_client.get_pr_info(pr_info)
+                files_data = await github_client.get_pr_files(pr_info)
+                
+                # Use real PR metadata but mock analysis
+                mock_analysis = {
+                    "pr_info": {
+                        "url": request.github_url,
+                        "repository": pr_info.full_repo,
+                        "pr_number": pr_info.pr_number,
+                        "title": pr_data.get("title", "Untitled PR"),
+                        "description": pr_data.get("body", "No description"),
+                        "author": pr_data.get("user", {}).get("login", "unknown"),
+                        "created_at": pr_data.get("created_at", ""),
+                        "state": pr_data.get("state", "unknown")
+                    },
+                    "changes_summary": {
+                        "files_changed": len(files_data),
+                        "additions": pr_data.get("additions", 0),
+                        "deletions": pr_data.get("deletions", 0),
+                        "changed_files": [f["filename"] for f in files_data]
+                    },
+                    "analysis": {
+                        "overall_score": 85,
+                        "issues": [
+                            {
+                                "title": "Demo analysis result",
+                                "description": "This is a demo analysis. In production, AI agents would analyze the actual code changes.",
+                                "severity": "low",
+                                "category": "demo",
+                                "file_path": files_data[0]["filename"] if files_data else "demo.html",
+                                "line_number": 1,
+                                "suggested_fix": "This is demo mode - no real issues detected",
+                                "fix_explanation": "Enable Azure OpenAI for real analysis"
+                            }
+                        ],
+                        "analysis_summary": f"Demo analysis of PR with {len(files_data)} files changed. Real AI analysis available with Azure OpenAI configuration.",
+                        "files_analyzed": len(files_data)
+                    },
+                    "metadata": {
+                        "analysis_time_seconds": 1.5,
+                        "analyzed_at": datetime.now().isoformat(),
+                        "language": request.language,
+                        "demo_mode": True
+                    }
+                }
+                
+                analysis_results = mock_analysis
+                
+            except Exception as e:
+                logger.error(f"Failed to fetch real PR data in demo mode: {e}")
+                # Fallback to completely mock data
+                mock_analysis = {
+                    "pr_info": {
+                        "url": request.github_url,
+                        "repository": pr_info.full_repo,
+                        "pr_number": pr_info.pr_number,
+                        "title": "Demo PR Analysis (API Error)",
+                        "description": "Could not fetch real PR data",
+                        "author": "demo-user",
+                        "created_at": datetime.now().isoformat(),
+                        "state": "open"
+                    },
+                    "changes_summary": {
+                        "files_changed": 1,
+                        "additions": 0,
+                        "deletions": 1,
+                        "changed_files": ["demo.html"]
+                    },
+                    "analysis": {
+                        "overall_score": 75,
+                        "issues": [
+                            {
+                                "title": "Demo mode - API error",
+                                "description": "Could not fetch real PR data. This is a demo response.",
+                                "severity": "low",
+                                "category": "demo",
+                                "file_path": "demo.html",
+                                "line_number": 1,
+                                "suggested_fix": "Check GitHub API access",
+                                "fix_explanation": "Ensure GitHub token has proper permissions"
+                            }
+                        ],
+                        "analysis_summary": f"Demo mode with API error: {str(e)}",
+                        "files_analyzed": 1
+                    },
+                    "metadata": {
+                        "analysis_time_seconds": 1.0,
+                        "analyzed_at": datetime.now().isoformat(),
+                        "language": request.language,
+                        "demo_mode": True
+                    }
+                }
+                
+                analysis_results = mock_analysis
             
         else:
             # Get AI orchestrator
@@ -649,9 +714,29 @@ async def analyze_github_pr(
                 await github_client.close()
                 raise HTTPException(status_code=503, detail="AI analysis service not available")
             
-            # Run real PR analysis
-            pr_analyzer = PRAnalyzer(github_client, orchestrator)
-            analysis_results = await pr_analyzer.analyze_pr(request.github_url, request.language)
+            # Gather comprehensive PR context using CLI tools
+            pr_info_parsed = GitHubURLParser.parse_pr_url(request.github_url)
+            if pr_info_parsed and github_toolkit and github_toolkit.is_available:
+                logger.info("Using GitHub CLI for comprehensive PR analysis")
+                pr_context = github_toolkit.analyze_pr_context(pr_info_parsed.full_repo, pr_info_parsed.pr_number)
+                
+                # Use both API and CLI data for analysis
+                pr_analyzer = PRAnalyzer(github_client, orchestrator)
+                analysis_results = await pr_analyzer.analyze_pr(request.github_url, request.language)
+                
+                # Enhance with CLI data
+                if pr_context.get("analysis_ready"):
+                    analysis_results["metadata"]["cli_enhanced"] = True
+                    analysis_results["metadata"]["cli_context"] = {
+                        "reviews_count": len(pr_context["data"].get("reviews", [])),
+                        "comments_count": len(pr_context["data"].get("comments", [])),
+                        "languages": pr_context["data"].get("languages", {})
+                    }
+            else:
+                # Fallback to API-only analysis
+                logger.info("Using API-only PR analysis")
+                pr_analyzer = PRAnalyzer(github_client, orchestrator)
+                analysis_results = await pr_analyzer.analyze_pr(request.github_url, request.language)
         
         # Update PR analysis record with results
         pr_data = analysis_results["pr_info"]
@@ -663,7 +748,7 @@ async def analyze_github_pr(
         pr_analysis.overall_score = ai_analysis["overall_score"]
         pr_analysis.analysis_summary = ai_analysis["analysis_summary"]
         pr_analysis.model_used = os.getenv("REASONING_MODEL", "demo")
-        pr_analysis.analysis_time_seconds = analysis_results["metadata"]["analysis_time_seconds"]
+        pr_analysis.analysis_time_seconds = analysis_results.get("metadata", {}).get("analysis_time_seconds", 2.0)
         pr_analysis.files_changed = changes_data["changed_files"]
         pr_analysis.additions = changes_data["additions"]
         pr_analysis.deletions = changes_data["deletions"]
@@ -741,6 +826,160 @@ async def list_pr_analyses(
     ).offset(skip).limit(limit).order_by(PRAnalysis.created_at.desc()).all()
     
     return [PRAnalysisResponse.from_orm(analysis) for analysis in analyses]
+
+@app.post("/api/github/pr/review")
+async def create_comprehensive_pr_review(
+    request: PRReviewRequest,
+    current_user: GitHubUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Create a comprehensive PR review using AI analysis and GitHub CLI tools.
+    
+    This endpoint:
+    1. Analyzes the PR using AI agents
+    2. Formats the analysis as a professional review
+    3. Optionally posts the review to GitHub
+    """
+    try:
+        # Parse PR URL
+        pr_info = GitHubURLParser.parse_pr_url(request.github_url)
+        if not pr_info:
+            raise HTTPException(status_code=400, detail="Invalid GitHub PR URL")
+        
+        # Get user's GitHub token
+        token_manager = TokenManager()
+        github_token = token_manager.extract_access_token(current_user.encrypted_token_data)
+        
+        # Initialize tools
+        github_client = GitHubClient(github_token)
+        try:
+            from tools import AIGitHubToolkit
+            github_toolkit = AIGitHubToolkit(github_token)
+        except ImportError as e:
+            logger.warning(f"GitHub CLI tools not available: {e}")
+            github_toolkit = None
+        
+        logger.info(f"Creating comprehensive review for PR {pr_info.full_repo}#{pr_info.pr_number}")
+        
+        if is_demo_mode():
+            # Demo mode - create mock review
+            mock_analysis = {
+                "pr_info": {
+                    "url": request.github_url,
+                    "repository": pr_info.full_repo,
+                    "pr_number": pr_info.pr_number,
+                    "title": "Demo PR Review",
+                    "author": "demo-user"
+                },
+                "analysis": {
+                    "overall_score": 85,
+                    "issues": [
+                        {
+                            "title": "Code structure could be improved",
+                            "description": "Consider breaking down this large function into smaller, more focused functions",
+                            "severity": "medium",
+                            "category": "quality",
+                            "file_path": "src/main.py",
+                            "line_number": 42,
+                            "suggested_fix": "Extract logic into separate helper functions"
+                        }
+                    ],
+                    "analysis_summary": "Overall good code quality with minor improvements needed.",
+                    "files_analyzed": 3
+                },
+                "metadata": {
+                    "analysis_time_seconds": 2.5,
+                    "analyzed_at": datetime.now().isoformat(),
+                    "language": request.language
+                }
+            }
+            
+            # Format as review
+            if github_toolkit:
+                review_feedback = github_toolkit.provide_pr_feedback(
+                    pr_info.full_repo, 
+                    pr_info.pr_number, 
+                    mock_analysis,
+                    create_review=request.create_github_review
+                )
+            else:
+                # Fallback formatting without CLI tools
+                review_feedback = {
+                    "success": True,
+                    "review_body": f"## AI Code Review\n\n**Overall Score:** 85/100\n\n{mock_analysis['analysis']['analysis_summary']}\n\n*Note: Limited functionality - GitHub CLI tools not available*",
+                    "review_created": False
+                }
+            
+            return {
+                "success": True,
+                "repository": pr_info.full_repo,
+                "pr_number": pr_info.pr_number,
+                "review_body": review_feedback.get("review_body"),
+                "review_created": review_feedback.get("review_created", False),
+                "github_review_url": None,
+                "analysis_summary": mock_analysis["analysis"]["analysis_summary"],
+                "demo_mode": True
+            }
+        
+        else:
+            # Real analysis mode
+            orchestrator = get_ai_orchestrator()
+            if not orchestrator:
+                raise HTTPException(status_code=503, detail="AI analysis service not available")
+            
+            # Run comprehensive analysis
+            pr_analyzer = PRAnalyzer(github_client, orchestrator)
+            analysis_results = await pr_analyzer.analyze_pr(request.github_url, request.language)
+            
+            # Enhance with CLI context if available
+            if github_toolkit and github_toolkit.is_available:
+                pr_context = github_toolkit.analyze_pr_context(pr_info.full_repo, pr_info.pr_number)
+                if pr_context.get("analysis_ready"):
+                    analysis_results["metadata"]["cli_enhanced"] = True
+                    logger.info("Enhanced analysis with GitHub CLI context")
+            
+            # Create formatted review
+            if github_toolkit:
+                review_feedback = github_toolkit.provide_pr_feedback(
+                    pr_info.full_repo,
+                    pr_info.pr_number,
+                    analysis_results,
+                    create_review=request.create_github_review
+                )
+            else:
+                # Fallback formatting
+                score = analysis_results["analysis"]["overall_score"]
+                review_feedback = {
+                    "success": True,
+                    "review_body": f"## AI Code Review\n\n**Overall Score:** {score}/100\n\n{analysis_results['analysis']['analysis_summary']}\n\n*Note: Limited functionality - GitHub CLI tools not available*",
+                    "review_created": False
+                }
+            
+            # Store review in database if created
+            review_url = None
+            if review_feedback.get("review_created"):
+                review_url = f"https://github.com/{pr_info.full_repo}/pull/{pr_info.pr_number}"
+                logger.info(f"Successfully created GitHub review for PR {pr_info.full_repo}#{pr_info.pr_number}")
+            
+            await github_client.close()
+            
+            return {
+                "success": True,
+                "repository": pr_info.full_repo,
+                "pr_number": pr_info.pr_number,
+                "review_body": review_feedback.get("review_body"),
+                "review_created": review_feedback.get("review_created", False),
+                "github_review_url": review_url,
+                "analysis_summary": analysis_results["analysis"]["analysis_summary"],
+                "overall_score": analysis_results["analysis"]["overall_score"],
+                "issues_found": len(analysis_results["analysis"]["issues"]),
+                "files_analyzed": analysis_results["analysis"]["files_analyzed"],
+                "demo_mode": False
+            }
+            
+    except Exception as e:
+        logger.error(f"PR review creation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to create PR review: {str(e)}")
 
 @app.post("/api/submissions/mock")
 async def create_mock_submission(request: dict):
@@ -1049,6 +1288,125 @@ async def get_current_code(submission_id: int, db: Session = Depends(get_db)):
         "filename": submission.filename,
         "last_updated": submission.updated_at.isoformat()
     }
+
+# GitHub PR Review endpoint for frontend integration
+@app.post("/review/github-pr")
+async def analyze_pr_for_review(request: dict, db: Session = Depends(get_db)):
+    """Analyze GitHub PR and return review results for frontend."""
+    try:
+        pr_url = request.get("pr_url")
+        language = request.get("language", "javascript")
+        
+        if not pr_url:
+            raise HTTPException(status_code=400, detail="PR URL is required")
+        
+        # Parse PR URL
+        pr_info = GitHubURLParser.parse_pr_url(pr_url)
+        if not pr_info:
+            raise HTTPException(status_code=400, detail="Invalid GitHub PR URL")
+        
+        logger.info(f"Analyzing PR: {pr_info.full_repo}#{pr_info.pr_number}")
+        
+        # Create GitHub client with authentication token
+        github_token = "${GITHUB_TOKEN:-GITHUB_TOKEN_NOT_SET}"
+        github_client = GitHubClient(access_token=github_token)
+        
+        if is_demo_mode():
+            # Use real GitHub data but mock AI analysis for demo mode
+            logger.info("Running PR analysis in demo mode - fetching real PR data")
+            
+            # Fetch real PR data even in demo mode
+            pr_data = await github_client.get_pr_info(pr_info)
+            files_data = await github_client.get_pr_files(pr_info)
+            
+            # Also fetch the actual diff content for display
+            try:
+                diff_content = await github_client.get_pr_diff(pr_info)
+            except Exception as e:
+                logger.warning(f"Failed to fetch PR diff: {e}")
+                diff_content = ""
+            
+            # Use real PR metadata but mock analysis
+            mock_analysis = {
+                "pr_info": {
+                    "url": pr_url,
+                    "repository": pr_info.full_repo,
+                    "pr_number": pr_info.pr_number,
+                    "title": pr_data.get("title", "Untitled PR"),
+                    "description": pr_data.get("body", "No description"),
+                    "author": pr_data.get("user", {}).get("login", "unknown"),
+                    "created_at": pr_data.get("created_at", ""),
+                    "updated_at": pr_data.get("updated_at", ""),
+                    "state": pr_data.get("state", "open"),
+                    "merged": pr_data.get("merged", False),
+                    "mergeable": pr_data.get("mergeable"),
+                    "base_branch": pr_data.get("base", {}).get("ref", "main"),
+                    "head_branch": pr_data.get("head", {}).get("ref", "feature-branch")
+                },
+                "changes_summary": {
+                    "files_changed": len(files_data) if files_data else 0,
+                    "additions": pr_data.get("additions", 0),
+                    "deletions": pr_data.get("deletions", 0),
+                    "changed_files": [f.get("filename", "") for f in files_data] if files_data else [],
+                    "file_types": {"source_code": len(files_data) if files_data else 0, "tests": 0, "documentation": 0, "configuration": 0, "other": 0}
+                },
+                "analysis": {
+                    "overall_score": 85,
+                    "issues": [
+                        {
+                            "title": "Documentation Update",
+                            "description": "HTML file was modified - ensure content is valid and accessible",
+                            "severity": "low",
+                            "category": "documentation",
+                            "line_number": None,
+                            "code_snippet": "",
+                            "suggested_fix": "Review the HTML changes for proper structure and accessibility",
+                            "fix_explanation": "Ensure HTML modifications follow web standards",
+                            "file_path": next(iter([f.get("filename", "") for f in files_data] if files_data else [""]), "")
+                        }
+                    ] if files_data else [],
+                    "analysis_summary": f"Analyzed {len(files_data) if files_data else 0} changed files. This appears to be a documentation or HTML update. No critical issues detected." if files_data else "No files to analyze.",
+                    "files_analyzed": len(files_data) if files_data else 0,
+                    "total_lines_analyzed": pr_data.get("additions", 0) + pr_data.get("deletions", 0)
+                },
+                "metadata": {
+                    "analysis_time_seconds": 2.0,
+                    "analyzed_at": datetime.now().isoformat(),
+                    "language": language,
+                    "diff_size": 1024
+                }
+            }
+            
+            return {
+                "status": "success",
+                "analysis": mock_analysis,
+                "timestamp": datetime.now().isoformat(),
+                "demo_mode": True
+            }
+        else:
+            # Production mode with real AI analysis
+            orchestrator = get_ai_orchestrator()
+            if not orchestrator:
+                raise HTTPException(status_code=500, detail="AI orchestrator not available")
+            
+            # Create PR analyzer
+            pr_analyzer = PRAnalyzer(github_client, orchestrator)
+            
+            # Run analysis
+            analysis_results = await pr_analyzer.analyze_pr(pr_url, language)
+            
+            return {
+                "status": "success", 
+                "analysis": analysis_results,
+                "timestamp": datetime.now().isoformat(),
+                "demo_mode": False
+            }
+            
+    except Exception as e:
+        logger.error(f"PR analysis failed: {e}")
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 
 # Legacy endpoint for backward compatibility
 @app.post("/review")
