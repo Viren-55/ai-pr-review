@@ -111,7 +111,7 @@ class PRAnalyzer:
                 },
                 "analysis": {
                     "overall_score": score,
-                    "issues": [self._format_issue(issue, files_data) for issue in issues],
+                    "issues": [self._format_issue(issue, None) for issue in issues],
                     "analysis_summary": summary,
                     "files_analyzed": len([f for f in files_data if self._should_analyze_file(f["filename"], language)]),
                     "total_lines_analyzed": len(analyzable_content.split('\n')) if analyzable_content else 0
