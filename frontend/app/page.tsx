@@ -8,6 +8,7 @@ import DetailedFindingsPage from '@/components/DetailedFindingsPage'
 import ThemeToggle from '@/components/ThemeToggle'
 import GitHubAuth from '@/components/GitHubAuth'
 import { Navbar, Container, Nav } from 'react-bootstrap'
+import { useCodeReview } from '@/lib/hooks/useCodeReview'
 
 interface GitHubUser {
   id: number
@@ -20,9 +21,11 @@ interface GitHubUser {
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState('home')
-  const [reviewData, setReviewData] = useState(null)
   const [submittedCode, setSubmittedCode] = useState(null)
   const [user, setUser] = useState<GitHubUser | null>(null)
+  
+  // Use the proper hook for code review functionality
+  const { isReviewing, reviewData, error, reviewCode, reviewGitHubPR } = useCodeReview()
 
   const handleStartReview = () => {
     setCurrentPage('submit')
@@ -31,144 +34,34 @@ export default function App() {
   const handleCodeSubmit = async (code: string, language: string, type: string, filename?: string) => {
     setSubmittedCode({ code, language, type, filename })
     
-    // Call new backend API
     try {
-      let response;
-      
-      if (type === 'upload' && filename) {
-        // For file uploads, use the upload endpoint
-        const formData = new FormData()
-        formData.append('language', language)
-        // Create a File object from the code string for consistency
-        const file = new File([code], filename, { type: 'text/plain' })
-        formData.append('file', file)
-        
-        response = await fetch('http://localhost:8000/api/upload', {
-          method: 'POST',
-          body: formData
-        })
-      } else if (type === 'github') {
-        // For GitHub PR submissions - extract URL from code
-        const githubUrl = code.replace('GitHub PR: ', '').trim()
-        
-        response = await fetch('http://localhost:8000/api/github/pr/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include', // Include cookies for authentication
-          body: JSON.stringify({ 
-            github_url: githubUrl,
-            language,
-            apply_fixes: false,
-            create_review: false
-          })
-        })
-      } else {
-        // For direct code submission - use real API endpoint
-        response = await fetch('http://localhost:8000/api/submissions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            code, 
-            language, 
-            filename: filename || null,
-            submission_type: type 
-          })
-        })
-      }
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-      
-      const data = await response.json()
-      
-      // Transform the new API response to match the expected format
-      let transformedData;
-      
       if (type === 'github') {
-        // GitHub PR response has different structure
-        transformedData = {
-          ...data,
-          submission_id: data.id,
-          status: 'success',
-          timestamp: data.created_at,
-          model_used: data.model_used || 'GitHub Analysis',
-          review: formatPRAnalysisText(data),
-          pr_data: data // Store full PR data for display
-        }
+        // For GitHub PR submissions - extract URL from code and use the proper hook
+        const githubUrl = code.replace('GitHub PR: ', '').trim()
+        await reviewGitHubPR(githubUrl, language)
       } else {
-        // Regular code submission response
-        transformedData = {
-          ...data,
-          submission_id: data.id,
-          status: 'success',
-          timestamp: data.created_at,
-          model_used: data.analysis?.model_used || 'unknown',
-          review: data.analysis ? formatAnalysisText(data.analysis) : 'Analysis pending...'
-        }
+        // For direct code submission, use the reviewCode hook
+        await reviewCode(code, language, filename)
       }
       
-      setReviewData(transformedData)
+      // Navigate to results page
       setCurrentPage('results')
     } catch (error) {
       console.error('Review failed:', error)
-      // Show error state or fallback
-      setReviewData({
-        status: 'error',
-        error: 'Failed to analyze code. Please try again.',
-        timestamp: new Date().toISOString()
-      })
+      // Error handling is done by the hook, just navigate to results to show the error
       setCurrentPage('results')
     }
   }
 
-  const formatAnalysisText = (analysis: any) => {
-    const issues = analysis.issues || []
-    const issuesText = issues.map((issue: any) => 
-      `**${issue.title}** (${issue.severity.toUpperCase()})\n${issue.description}`
-    ).join('\n\n')
-    
-    return `
-Overall Score: ${analysis.overall_score}/100
-
-Issues Found:
-${issuesText}
-
-${analysis.analysis_summary}
-    `.trim()
-  }
-
-  const formatPRAnalysisText = (prData: any) => {
-    const issues = prData.pr_issues || []
-    const issuesText = issues.map((issue: any) => 
-      `**${issue.title}** (${issue.severity.toUpperCase()})\n` +
-      `File: ${issue.file_path || 'N/A'}\n` +
-      `${issue.description}`
-    ).join('\n\n')
-    
-    return `
-Pull Request: ${prData.pr_title || 'Untitled'}
-Repository: ${prData.repository}
-Overall Score: ${prData.overall_score || 'N/A'}/100
-
-Files Changed: ${prData.files_changed?.length || 0}
-Additions: +${prData.additions || 0} Deletions: -${prData.deletions || 0}
-
-Issues Found (${issues.length}):
-${issuesText || 'No issues found'}
-
-${prData.analysis_summary || 'Analysis completed'}
-    `.trim()
-  }
 
   const handleViewDetails = () => {
     setCurrentPage('details')
   }
 
   const handleNewReview = () => {
-    setReviewData(null)
     setSubmittedCode(null)
     setCurrentPage('submit')
+    // Note: reviewData is now managed by the useCodeReview hook
   }
 
   return (
@@ -279,13 +172,39 @@ ${prData.analysis_summary || 'Analysis completed'}
             <SubmitCodePage onSubmit={handleCodeSubmit} user={user} />
           </div>
         )}
-        {currentPage === 'results' && reviewData && (
+        {currentPage === 'results' && (reviewData || error || isReviewing) && (
           <div className="animate-fade-in">
-            <ReviewResultsPage 
-              reviewData={reviewData}
-              onViewDetails={handleViewDetails}
-              onNewReview={handleNewReview}
-            />
+            {isReviewing ? (
+              <div className="d-flex justify-content-center align-items-center" style={{ minHeight: '400px' }}>
+                <div className="text-center">
+                  <div className="spinner-border text-primary mb-3" role="status">
+                    <span className="visually-hidden">Loading...</span>
+                  </div>
+                  <h5>Analyzing your code...</h5>
+                  <p className="text-muted">This may take a moment</p>
+                </div>
+              </div>
+            ) : error ? (
+              <div className="d-flex justify-content-center align-items-center" style={{ minHeight: '400px' }}>
+                <div className="text-center">
+                  <div className="text-danger mb-3">
+                    <i className="bi bi-exclamation-triangle" style={{ fontSize: '3rem' }}></i>
+                  </div>
+                  <h5 className="text-danger">Analysis Failed</h5>
+                  <p className="text-muted mb-4">{error}</p>
+                  <button className="btn btn-primary" onClick={() => setCurrentPage('submit')}>
+                    <i className="bi bi-arrow-left me-2"></i>
+                    Try Again
+                  </button>
+                </div>
+              </div>
+            ) : reviewData ? (
+              <ReviewResultsPage 
+                reviewData={reviewData}
+                onViewDetails={handleViewDetails}
+                onNewReview={handleNewReview}
+              />
+            ) : null}
           </div>
         )}
         {currentPage === 'details' && reviewData && (

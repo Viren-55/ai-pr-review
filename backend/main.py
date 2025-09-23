@@ -43,6 +43,16 @@ load_dotenv(".env")  # Load from current directory (backend/)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Pydantic AI v2 Integration
+try:
+    from agents_v2 import AgentOrchestrator as PydanticAgentOrchestrator
+    from api_v2 import router as api_v2_router, set_orchestrator
+    PYDANTIC_AI_AVAILABLE = True
+    logger.info("Pydantic AI v2 integration available")
+except ImportError as e:
+    PYDANTIC_AI_AVAILABLE = False
+    logger.warning(f"Pydantic AI v2 not available: {e}")
+
 # Note: Environment variables are optional for demo mode
 # In production, ensure proper Azure OpenAI credentials are configured
 
@@ -62,6 +72,7 @@ else:
 # Initialize AI agents (delayed to avoid startup blocking)
 ai_orchestrator = None
 code_fixer = None
+pydantic_orchestrator = None
 
 def get_ai_orchestrator():
     """Get AI orchestrator, creating it if needed."""
@@ -69,6 +80,19 @@ def get_ai_orchestrator():
     if ai_orchestrator is None and azure_client is not None:
         ai_orchestrator = create_ai_orchestrator(azure_client, os.getenv("REASONING_MODEL"))
     return ai_orchestrator
+
+def get_pydantic_orchestrator():
+    """Get Pydantic AI orchestrator, creating it if needed."""
+    global pydantic_orchestrator
+    if PYDANTIC_AI_AVAILABLE and pydantic_orchestrator is None:
+        pydantic_orchestrator = PydanticAgentOrchestrator(
+            azure_client=azure_client,
+            model_name=os.getenv("REASONING_MODEL")
+        )
+        # Set the orchestrator for API v2
+        set_orchestrator(pydantic_orchestrator)
+        logger.info("Pydantic AI orchestrator initialized")
+    return pydantic_orchestrator
 
 def get_code_fixer():
     """Get code fixer, creating it if needed."""
@@ -215,13 +239,21 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
+        "http://localhost:3001",
         "http://127.0.0.1:3000",
-        "https://localhost:3000"
+        "http://127.0.0.1:3001",
+        "https://localhost:3000",
+        "https://localhost:3001"
     ],  # Specific origins required when using credentials
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
+# Include API v2 router if available
+if PYDANTIC_AI_AVAILABLE:
+    app.include_router(api_v2_router)
+    logger.info("Pydantic AI v2 API routes registered")
 
 # Create database tables on startup
 @app.on_event("startup")
@@ -230,6 +262,17 @@ async def startup_event():
     create_tables()
     await database.connect()
     logger.info("Database connected and tables created")
+    
+    # Initialize Pydantic AI orchestrator if available
+    # TODO: Fix Pydantic AI tool annotations before enabling
+    # if PYDANTIC_AI_AVAILABLE:
+    #     try:
+    #         get_pydantic_orchestrator()
+    #         logger.info("Pydantic AI orchestrator initialized on startup")
+    #     except Exception as e:
+    #         logger.warning(f"Failed to initialize Pydantic AI orchestrator: {e}")
+    #         logger.info("Continuing with legacy agents only")
+    logger.info("Pydantic AI orchestrator temporarily disabled - using legacy agents")
 
 @app.on_event("shutdown")
 async def shutdown_event():

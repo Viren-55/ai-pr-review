@@ -1,0 +1,271 @@
+{
+  "status": "success",
+  "analysis": {
+    "pr_info": {
+      "url": "https://github.com/Viren-55/poc-outreach-workflow/pull/2",
+      "repository": "Viren-55/poc-outreach-workflow",
+      "pr_number": 2,
+      "title": "Update crust_api_client.py",
+      "description": null,
+      "author": "Viren-55",
+      "created_at": "2025-09-14T19:27:10Z",
+      "updated_at": "2025-09-14T19:27:10Z",
+      "state": "open",
+      "merged": false,
+      "mergeable": true,
+      "base_branch": "main",
+      "head_branch": "Viren-55-patch-2"
+    },
+    "changes_summary": {
+      "files_changed": 1,
+      "additions": 3,
+      "deletions": 1,
+      "changed_files": [
+        "crust_api_client.py"
+      ],
+      "file_types": {
+        "source_code": 1,
+        "tests": 0,
+        "documentation": 0,
+        "configuration": 0,
+        "other": 0
+      }
+    },
+    "code_content": {
+      "diff": "diff --git a/crust_api_client.py b/crust_api_client.py\nindex 1eca118..69affe1 100755\n--- a/crust_api_client.py\n+++ b/crust_api_client.py\n@@ -12,6 +12,8 @@\n import time\n from datetime import datetime\n \n+## testing viren #pass= 1234\n+\n # Load environment variables\n load_dotenv()\n \n@@ -370,4 +372,4 @@ def main():\n         print(f\"   - Consider contacting Crust Data support for API documentation\")\n \n if __name__ == \"__main__\":\n-    main()\n\\ No newline at end of file\n+    main()\n",
+      "extracted_code": "import time\nfrom datetime import datetime\n\n## testing viren #pass= 1234\n\n# Load environment variables\nload_dotenv()\n\n        print(f\"   - Consider contacting Crust Data support for API documentation\")\n\nif __name__ == \"__main__\":\n    main()",
+      "formatted_diff": "\n=== crust_api_client.py ===\n@@ -12,6 +12,8 @@\n  1:  import time\n  2:  from datetime import datetime\n  3:  \n  4: +## testing viren #pass= 1234\n  5: +\n  6:  # Load environment variables\n  7:  load_dotenv()\n  8:  \n@@ -370,4 +372,4 @@ def main():\n  1:          print(f\"   - Consider contacting Crust Data support for API documentation\")\n  2:  \n  3:  if __name__ == \"__main__\":\n  4: -    main()\n\\ No newline at end of file\n  6: +    main()\n",
+      "file_contents": {
+        "crust_api_client.py": "#!/usr/bin/env python3\n\"\"\"\nProduction-ready Crust Data API Client\nBased on comprehensive testing and analysis\n\"\"\"\n\nimport os\nimport requests\nimport json\nfrom typing import Dict, List, Optional, Any\nfrom dotenv import load_dotenv\nimport time\nfrom datetime import datetime\n\n# Load environment variables\nload_dotenv()\n\nclass CrustDataAPIClient:\n    \"\"\"\n    Production Crust Data API Client with comprehensive authentication support\n    \n    This client has been tested with the following findings:\n    - Bearer token authentication works with api.crustdata.com\n    - The main API server responds but specific endpoints may need discovery\n    - Documentation site requires additional authentication steps\n    \"\"\"\n    \n    def __init__(self, \n                 api_base_url: Optional[str] = None, \n                 docs_base_url: Optional[str] = None,\n                 token: Optional[str] = None,\n                 email: Optional[str] = None,\n                 password: Optional[str] = None):\n        \n        # Load from environment if not provided\n        self.api_base_url = api_base_url or os.getenv('CRUST_API_BASE_URL', 'https://api.crustdata.com')\n        self.docs_base_url = docs_base_url or os.getenv('CRUST_DOCS_URL', 'https://fulldocs.crustdata.com')\n        self.token = token or os.getenv('CRUST_API_TOKEN')\n        self.email = email or os.getenv('CRUST_EMAIL')\n        self.password = password or os.getenv('CRUST_PASSWORD')\n        \n        # Session management\n        self.api_session = requests.Session()\n        self.docs_session = requests.Session()\n        \n        # Authentication status\n        self.api_authenticated = False\n        self.docs_authenticated = False\n        \n        # Setup sessions\n        self._setup_api_session()\n        self._setup_docs_session()\n        \n    def _setup_api_session(self):\n        \"\"\"Setup API session with token authentication\"\"\"\n        if self.token:\n            self.api_session.headers.update({\n                'Authorization': f'Bearer {self.token}',\n                'Content-Type': 'application/json',\n                'User-Agent': 'CrustData-Python-Client/1.0'\n            })\n            self.api_authenticated = True\n    \n    def _setup_docs_session(self):\n        \"\"\"Setup documentation session with basic auth\"\"\"\n        if self.email and self.password:\n            self.docs_session.auth = (self.email, self.password)\n            self.docs_authenticated = True\n    \n    def test_api_connectivity(self) -> Dict[str, Any]:\n        \"\"\"\n        Test API connectivity and return comprehensive status\n        \"\"\"\n        results = {\n            'timestamp': datetime.now().isoformat(),\n            'api_base_url': self.api_base_url,\n            'docs_base_url': self.docs_base_url,\n            'token_available': bool(self.token),\n            'credentials_available': bool(self.email and self.password),\n            'tests': {}\n        }\n        \n        # Test API base URL\n        try:\n            response = self.api_session.get(self.api_base_url, timeout=10)\n            results['tests']['api_base'] = {\n                'status_code': response.status_code,\n                'success': response.status_code == 200,\n                'content_type': response.headers.get('content-type'),\n                'response_size': len(response.text)\n            }\n        except Exception as e:\n            results['tests']['api_base'] = {\n                'error': str(e),\n                'success': False\n            }\n        \n        # Test docs base URL\n        try:\n            response = self.docs_session.get(f\"{self.docs_base_url}/docs/api\", timeout=10)\n            results['tests']['docs_base'] = {\n                'status_code': response.status_code,\n                'success': response.status_code == 200,\n                'content_type': response.headers.get('content-type'),\n                'response_size': len(response.text),\n                'appears_authenticated': 'auth0' not in response.text.lower()\n            }\n        except Exception as e:\n            results['tests']['docs_base'] = {\n                'error': str(e),\n                'success': False\n            }\n        \n        return results\n    \n    def discover_endpoints(self) -> List[Dict[str, Any]]:\n        \"\"\"\n        Attempt to discover available API endpoints\n        \"\"\"\n        print(\"\ud83d\udd0d Discovering API endpoints...\")\n        \n        # Common endpoint patterns to test\n        potential_endpoints = [\n            # REST endpoints\n            ('GET', '/companies', 'Company data'),\n            ('GET', '/people', 'People/contacts data'),\n            ('GET', '/organizations', 'Organization data'),\n            ('GET', '/search', 'Search functionality'),\n            ('GET', '/data', 'General data endpoint'),\n            ('GET', '/datasets', 'Available datasets'),\n            \n            # Versioned endpoints\n            ('GET', '/v1/companies', 'V1 Company data'),\n            ('GET', '/v1/people', 'V1 People data'),\n            ('GET', '/v1/search', 'V1 Search'),\n            ('GET', '/v1/data', 'V1 Data'),\n            \n            # API namespaced\n            ('GET', '/api/companies', 'API Company data'),\n            ('GET', '/api/people', 'API People data'),\n            ('GET', '/api/search', 'API Search'),\n            ('GET', '/api/data', 'API Data'),\n            \n            # GraphQL\n            ('POST', '/graphql', 'GraphQL endpoint'),\n            ('GET', '/graphql', 'GraphQL endpoint (GET)'),\n            \n            # Metadata endpoints\n            ('GET', '/schema', 'API Schema'),\n            ('GET', '/swagger.json', 'Swagger documentation'),\n            ('GET', '/openapi.json', 'OpenAPI documentation'),\n            ('GET', '/health', 'Health check'),\n            ('GET', '/version', 'Version information'),\n        ]\n        \n        discovered = []\n        \n        for method, endpoint, description in potential_endpoints:\n            try:\n                url = f\"{self.api_base_url}{endpoint}\"\n                \n                if method == 'GET':\n                    response = self.api_session.get(url, timeout=5)\n                elif method == 'POST':\n                    if 'graphql' in endpoint:\n                        # Test with introspection query\n                        payload = {\"query\": \"{ __schema { types { name } } }\"}\n                        response = self.api_session.post(url, json=payload, timeout=5)\n                    else:\n                        response = self.api_session.post(url, timeout=5)\n                \n                result = {\n                    'method': method,\n                    'endpoint': endpoint,\n                    'description': description,\n                    'url': url,\n                    'status_code': response.status_code,\n                    'content_type': response.headers.get('content-type', 'unknown'),\n                    'content_length': len(response.text),\n                    'successful': response.status_code < 400,\n                    'json_response': False\n                }\n                \n                # Try to parse JSON if applicable\n                if 'application/json' in result['content_type']:\n                    try:\n                        data = response.json()\n                        result['json_response'] = True\n                        result['response_structure'] = type(data).__name__\n                        if isinstance(data, dict):\n                            result['json_keys'] = list(data.keys())[:10]  # First 10 keys\n                        elif isinstance(data, list) and data:\n                            result['array_length'] = len(data)\n                            if isinstance(data[0], dict):\n                                result['first_item_keys'] = list(data[0].keys())[:5]\n                    except:\n                        result['json_parse_error'] = True\n                \n                discovered.append(result)\n                \n                # Print status\n                status_emoji = \"\u2705\" if result['successful'] else \"\u274c\"\n                print(f\"  {status_emoji} {method} {endpoint:<20} - {response.status_code} - {description}\")\n                \n                if result['successful'] and result.get('json_response'):\n                    if result.get('json_keys'):\n                        print(f\"     \ud83d\udccb Keys: {', '.join(result['json_keys'][:5])}{'...' if len(result['json_keys']) > 5 else ''}\")\n                    elif result.get('array_length'):\n                        print(f\"     \ud83d\udcca Array with {result['array_length']} items\")\n                \n            except Exception as e:\n                discovered.append({\n                    'method': method,\n                    'endpoint': endpoint,\n                    'description': description,\n                    'url': f\"{self.api_base_url}{endpoint}\",\n                    'error': str(e),\n                    'successful': False\n                })\n                print(f\"  \u274c {method} {endpoint:<20} - ERROR: {str(e)[:50]}\")\n        \n        return discovered\n    \n    def get_data(self, endpoint: str, params: Optional[Dict] = None, use_docs: bool = False) -> Optional[Dict]:\n        \"\"\"\n        Fetch data from API endpoint\n        \n        Args:\n            endpoint: API endpoint path\n            params: Query parameters\n            use_docs: Whether to use docs session instead of API session\n        \"\"\"\n        session = self.docs_session if use_docs else self.api_session\n        base_url = self.docs_base_url if use_docs else self.api_base_url\n        \n        try:\n            url = f\"{base_url}{endpoint}\"\n            response = session.get(url, params=params, timeout=10)\n            response.raise_for_status()\n            \n            content_type = response.headers.get('content-type', '')\n            \n            if 'application/json' in content_type:\n                return response.json()\n            else:\n                return {\n                    'content': response.text,\n                    'content_type': content_type,\n                    'status_code': response.status_code\n                }\n                \n        except requests.exceptions.RequestException as e:\n            print(f\"Error fetching {endpoint}: {e}\")\n            return None\n    \n    def search(self, query: str, **kwargs) -> Optional[Dict]:\n        \"\"\"\n        Search functionality - tries multiple endpoints\n        \"\"\"\n        search_endpoints = ['/search', '/api/search', '/v1/search']\n        \n        for endpoint in search_endpoints:\n            params = {'q': query, **kwargs}\n            result = self.get_data(endpoint, params)\n            if result:\n                return result\n        \n        print(f\"No search endpoint found for query: {query}\")\n        return None\n    \n    def get_companies(self, **kwargs) -> Optional[Dict]:\n        \"\"\"\n        Get company data - tries multiple endpoints\n        \"\"\"\n        company_endpoints = ['/companies', '/api/companies', '/v1/companies']\n        \n        for endpoint in company_endpoints:\n            result = self.get_data(endpoint, kwargs)\n            if result:\n                return result\n        \n        print(\"No company endpoint found\")\n        return None\n    \n    def get_status(self) -> Dict[str, Any]:\n        \"\"\"Get client status and configuration\"\"\"\n        return {\n            'api_base_url': self.api_base_url,\n            'docs_base_url': self.docs_base_url,\n            'api_authenticated': self.api_authenticated,\n            'docs_authenticated': self.docs_authenticated,\n            'token_configured': bool(self.token),\n            'credentials_configured': bool(self.email and self.password),\n        }\n\ndef main():\n    \"\"\"Example usage and testing\"\"\"\n    print(\"\ud83d\ude80 Crust Data API Client - Comprehensive Test\")\n    print(\"=\" * 60)\n    \n    # Initialize client\n    client = CrustDataAPIClient()\n    \n    # Show status\n    status = client.get_status()\n    print(\"\ud83d\udcca Client Status:\")\n    for key, value in status.items():\n        emoji = \"\u2705\" if value else \"\u274c\"\n        print(f\"   {key}: {emoji}\")\n    \n    print(\"\\n\" + \"=\" * 60)\n    \n    # Test connectivity\n    print(\"\ud83d\udd0d Testing API connectivity...\")\n    connectivity = client.test_api_connectivity()\n    \n    print(f\"\\nAPI Base ({connectivity['api_base_url']}):\")\n    api_test = connectivity['tests'].get('api_base', {})\n    if api_test.get('success'):\n        print(f\"   \u2705 Status: {api_test['status_code']} | Type: {api_test['content_type']} | Size: {api_test['response_size']} chars\")\n    else:\n        print(f\"   \u274c Failed: {api_test.get('error', 'Unknown error')}\")\n    \n    print(f\"\\nDocs Base ({connectivity['docs_base_url']}):\")\n    docs_test = connectivity['tests'].get('docs_base', {})\n    if docs_test.get('success'):\n        authenticated = \"\u2705 Authenticated\" if docs_test.get('appears_authenticated') else \"\u274c Not authenticated\"\n        print(f\"   \u2705 Status: {docs_test['status_code']} | {authenticated}\")\n    else:\n        print(f\"   \u274c Failed: {docs_test.get('error', 'Unknown error')}\")\n    \n    print(\"\\n\" + \"=\" * 60)\n    \n    # Discover endpoints\n    discovered_endpoints = client.discover_endpoints()\n    successful_endpoints = [e for e in discovered_endpoints if e.get('successful')]\n    \n    print(f\"\\n\ud83d\udcca Discovery Summary:\")\n    print(f\"   Total endpoints tested: {len(discovered_endpoints)}\")\n    print(f\"   Successful endpoints: {len(successful_endpoints)}\")\n    \n    if successful_endpoints:\n        print(f\"\\n\u2705 Working endpoints:\")\n        for endpoint in successful_endpoints[:5]:  # Show first 5\n            print(f\"   {endpoint['method']} {endpoint['endpoint']} - {endpoint['description']}\")\n    \n    # Save detailed results\n    results = {\n        'client_status': status,\n        'connectivity_test': connectivity,\n        'discovered_endpoints': discovered_endpoints,\n        'timestamp': datetime.now().isoformat()\n    }\n    \n    with open('crust_api_discovery_results.json', 'w') as f:\n        json.dump(results, f, indent=2, default=str)\n    \n    print(f\"\\n\ud83d\udcbe Detailed results saved to: crust_api_discovery_results.json\")\n    print(\"\u2705 Testing completed!\")\n    \n    # Provide recommendations\n    print(f\"\\n\ud83d\udca1 Recommendations:\")\n    if successful_endpoints:\n        print(f\"   - API server is accessible at {client.api_base_url}\")\n        print(f\"   - Bearer token authentication is working\")\n        print(f\"   - Start with endpoint: {successful_endpoints[0]['endpoint']}\")\n    else:\n        print(f\"   - API endpoints may require specific paths not tested\")\n        print(f\"   - Check Crust Data documentation for correct endpoint paths\")\n        print(f\"   - Consider contacting Crust Data support for API documentation\")\n\nif __name__ == \"__main__\":\n    main()"
+      },
+      "files_data": [
+        {
+          "sha": "69affe156e5119bcc3d1b2bda0e0fd2e226fb58c",
+          "filename": "crust_api_client.py",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 1,
+          "changes": 4,
+          "blob_url": "https://github.com/Viren-55/poc-outreach-workflow/blob/6f698c4a384a6726b5d0d7a0cfe7f7342b23dcd8/crust_api_client.py",
+          "raw_url": "https://github.com/Viren-55/poc-outreach-workflow/raw/6f698c4a384a6726b5d0d7a0cfe7f7342b23dcd8/crust_api_client.py",
+          "contents_url": "https://api.github.com/repos/Viren-55/poc-outreach-workflow/contents/crust_api_client.py?ref=6f698c4a384a6726b5d0d7a0cfe7f7342b23dcd8",
+          "patch": "@@ -12,6 +12,8 @@\n import time\n from datetime import datetime\n \n+## testing viren #pass= 1234\n+\n # Load environment variables\n load_dotenv()\n \n@@ -370,4 +372,4 @@ def main():\n         print(f\"   - Consider contacting Crust Data support for API documentation\")\n \n if __name__ == \"__main__\":\n-    main()\n\\ No newline at end of file\n+    main()"
+        }
+      ]
+    },
+    "analysis": {
+      "overall_score": 0,
+      "issues": [
+        {
+          "title": "Unknown Issue",
+          "description": "A plaintext password is embedded in a code comment, which risks credential exposure if the repository is shared or compromised.",
+          "severity": "critical",
+          "category": "security",
+          "line_number": null,
+          "code_snippet": "## testing viren #pass= 1234",
+          "suggested_fix": "Remove any sensitive credentials from code and comments. Store passwords securely using environment variables or a dedicated secrets management solution.",
+          "fix_explanation": "Remove any sensitive credentials from code and comments. Store passwords securely using environment variables or a dedicated secrets management solution.",
+          "file_path": null
+        },
+        {
+          "title": "Unknown Issue",
+          "description": "The code includes a commented-out password which can lead to security risks if shared or committed to version control.",
+          "severity": "high",
+          "category": "quality",
+          "line_number": null,
+          "code_snippet": "## testing viren #pass= 1234",
+          "suggested_fix": "Hardcoded credentials in comments can still lead to accidental exposure. It's better to remove them completely and rely on secure storage.",
+          "fix_explanation": "Hardcoded credentials in comments can still lead to accidental exposure. It's better to remove them completely and rely on secure storage.",
+          "file_path": null
+        },
+        {
+          "title": "Unknown Issue",
+          "description": "The function load_dotenv is used but not imported, causing a NameError at runtime.",
+          "severity": "medium",
+          "category": "quality",
+          "line_number": null,
+          "code_snippet": "load_dotenv()",
+          "suggested_fix": "Ensuring the function is imported will prevent runtime errors when calling load_dotenv().",
+          "fix_explanation": "Ensuring the function is imported will prevent runtime errors when calling load_dotenv().",
+          "file_path": null
+        },
+        {
+          "title": "Unknown Issue",
+          "description": "The print statement is overly indented without a preceding block, leading to an IndentationError.",
+          "severity": "high",
+          "category": "quality",
+          "line_number": null,
+          "code_snippet": "        print(f\"   - Consider contacting Crust Data support for API documentation\")",
+          "suggested_fix": "Correct indentation eliminates syntax errors and improves code clarity.",
+          "fix_explanation": "Correct indentation eliminates syntax errors and improves code clarity.",
+          "file_path": null
+        },
+        {
+          "title": "Unknown Issue",
+          "description": "An f-string is used without any variable interpolation, which is unnecessary and could be replaced with a normal string literal.",
+          "severity": "low",
+          "category": "quality",
+          "line_number": null,
+          "code_snippet": "print(f\"   - Consider contacting Crust Data support for API documentation\")",
+          "suggested_fix": "Regular string literals are simpler and more readable when no formatting is needed.",
+          "fix_explanation": "Regular string literals are simpler and more readable when no formatting is needed.",
+          "file_path": null
+        },
+        {
+          "title": "Unknown Issue",
+          "description": "The code attempts to call main() in the __main__ block, but main() is not defined, causing a NameError.",
+          "severity": "high",
+          "category": "quality",
+          "line_number": null,
+          "code_snippet": "main()",
+          "suggested_fix": "Ensuring the main() function is defined prevents runtime errors and clarifies the entry point.",
+          "fix_explanation": "Ensuring the main() function is defined prevents runtime errors and clarifies the entry point.",
+          "file_path": null
+        },
+        {
+          "title": "Unknown Issue",
+          "description": "The modules time and datetime are imported but not used anywhere in the code, leading to unnecessary dependencies.",
+          "severity": "low",
+          "category": "quality",
+          "line_number": null,
+          "code_snippet": "import time\nfrom datetime import datetime",
+          "suggested_fix": "Removing unused imports cleans up the code and avoids confusion about dependencies.",
+          "fix_explanation": "Removing unused imports cleans up the code and avoids confusion about dependencies.",
+          "file_path": null
+        },
+        {
+          "title": "Hardcoded password in comment",
+          "description": "A password is exposed in a comment, which may reveal sensitive information and pose a security risk if the repository is shared.",
+          "severity": "high",
+          "category": "security",
+          "line_number": 4,
+          "code_snippet": "## testing viren #pass= 1234",
+          "suggested_fix": "Remove any real passwords from comments and store credentials securely in environment variables or a secrets manager.",
+          "fix_explanation": "Remove any real passwords from comments and store credentials securely in environment variables or a secrets manager.",
+          "file_path": null
+        },
+        {
+          "title": "Missing import for load_dotenv",
+          "description": "The function load_dotenv() is called without importing it, which will cause a NameError at runtime.",
+          "severity": "high",
+          "category": "logic",
+          "line_number": 7,
+          "code_snippet": "load_dotenv()",
+          "suggested_fix": "Add the import statement 'from dotenv import load_dotenv' at the top of the file.",
+          "fix_explanation": "Add the import statement 'from dotenv import load_dotenv' at the top of the file.",
+          "file_path": null
+        },
+        {
+          "title": "Unexpected indentation before print statement",
+          "description": "The print statement is over-indented, causing a potential IndentationError or unexpected behavior.",
+          "severity": "medium",
+          "category": "style",
+          "line_number": 9,
+          "code_snippet": "        print(f\"   - Consider contacting Crust Data support for API documentation\")",
+          "suggested_fix": "Remove extra spaces so the print statement is aligned correctly, e.g., 'print(f\"- Consider contacting Crust Data support for API documentation\")'.",
+          "fix_explanation": "Remove extra spaces so the print statement is aligned correctly, e.g., 'print(f\"- Consider contacting Crust Data support for API documentation\")'.",
+          "file_path": null
+        },
+        {
+          "title": "Undefined main() function",
+          "description": "main() is called in the __main__ block but is not defined anywhere, which will result in a NameError.",
+          "severity": "high",
+          "category": "logic",
+          "line_number": 12,
+          "code_snippet": "main()",
+          "suggested_fix": "Define the main() function before calling it or remove the call if it's not needed.",
+          "fix_explanation": "Define the main() function before calling it or remove the call if it's not needed.",
+          "file_path": null
+        },
+        {
+          "title": "Unused imports",
+          "description": "The modules 'time' and 'datetime' are imported but never used, which adds unnecessary clutter.",
+          "severity": "low",
+          "category": "maintainability",
+          "line_number": 1,
+          "code_snippet": "import time\nfrom datetime import datetime",
+          "suggested_fix": "Remove imports for modules that are not used in the code.",
+          "fix_explanation": "Remove imports for modules that are not used in the code.",
+          "file_path": null
+        },
+        {
+          "title": "Unknown Issue",
+          "description": "Comment at line 4 contains a hardcoded password (#pass= 1234). Hardcoded credentials in comments pose a maintainability and potential security risk.",
+          "severity": "high",
+          "category": "maintainability",
+          "line_number": null,
+          "code_snippet": "## testing viren #pass= 1234",
+          "suggested_fix": "Eliminating commented-out credentials prevents confusion and centralizes credential management, improving maintainability.",
+          "fix_explanation": "Eliminating commented-out credentials prevents confusion and centralizes credential management, improving maintainability.",
+          "file_path": null
+        },
+        {
+          "title": "Unknown Issue",
+          "description": "The 'time' module is imported but not used anywhere in the code, adding unnecessary clutter.",
+          "severity": "low",
+          "category": "maintainability",
+          "line_number": null,
+          "code_snippet": "import time",
+          "suggested_fix": "Removing unused imports simplifies the codebase and reduces maintenance overhead.",
+          "fix_explanation": "Removing unused imports simplifies the codebase and reduces maintenance overhead.",
+          "file_path": null
+        },
+        {
+          "title": "Unknown Issue",
+          "description": "The 'datetime' class from the 'datetime' module is imported but not used in the code.",
+          "severity": "low",
+          "category": "maintainability",
+          "line_number": null,
+          "code_snippet": "from datetime import datetime",
+          "suggested_fix": "Eliminating unused code improves readability and maintainability.",
+          "fix_explanation": "Eliminating unused code improves readability and maintainability.",
+          "file_path": null
+        },
+        {
+          "title": "Unknown Issue",
+          "description": "The function 'load_dotenv()' is called on line 7 but it is not imported or defined, leading to potential runtime errors.",
+          "severity": "medium",
+          "category": "maintainability",
+          "line_number": null,
+          "code_snippet": "load_dotenv()",
+          "suggested_fix": "Ensuring that all used functions are properly imported prevents errors and clarifies dependencies.",
+          "fix_explanation": "Ensuring that all used functions are properly imported prevents errors and clarifies dependencies.",
+          "file_path": null
+        },
+        {
+          "title": "Unknown Issue",
+          "description": "The print statement on line 9 has excessive indentation (8 spaces), which reduces readability and violates typical style conventions.",
+          "severity": "low",
+          "category": "maintainability",
+          "line_number": null,
+          "code_snippet": "        print(f\"   - Consider contacting Crust Data support for API documentation\")",
+          "suggested_fix": "Consistent indentation improves code readability and maintains style consistency.",
+          "fix_explanation": "Consistent indentation improves code readability and maintains style consistency.",
+          "file_path": null
+        },
+        {
+          "title": "Unknown Issue",
+          "description": "The script calls 'main()' under the '__main__' guard but 'main' is not defined, causing a NameError at runtime.",
+          "severity": "high",
+          "category": "maintainability",
+          "line_number": null,
+          "code_snippet": "    main()",
+          "suggested_fix": "Defining called functions prevents runtime errors and clarifies the program's entry point for maintainability.",
+          "fix_explanation": "Defining called functions prevents runtime errors and clarifies the program's entry point for maintainability.",
+          "file_path": null
+        }
+      ],
+      "analysis_summary": "Code Analysis Summary\n        ====================\n        \n        Total Issues Found: 18\n        Analysis Time: 134 seconds\n        \n        Issues by Severity:\n        - Critical: 1\n        - High: 8\n        - Medium: 3\n        - Low: 6\n        \n        Issues by Category:\n        - Security: 2\n        - Quality: 6\n        - Logic: 2\n        - Style: 1\n        - Maintainability: 7\n        \n        Agent Results:\n        - Security Analysis Agent: 1 issues\n        - Performance Optimization Agent: 0 issues\n        - Code Quality Agent: 6 issues\n        - Best Practices Agent: 5 issues\n        - Maintainability Agent: 6 issues",
+      "files_analyzed": 1,
+      "total_lines_analyzed": 12
+    },
+    "metadata": {
+      "analysis_time_seconds": 136.192364,
+      "analyzed_at": "2025-09-15T11:32:00.575438",
+      "language": "python",
+      "diff_size": 479
+    }
+  },
+  "timestamp": "2025-09-15T11:32:00.575598",
+  "demo_mode": false
+}

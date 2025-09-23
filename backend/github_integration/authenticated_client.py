@@ -76,6 +76,37 @@ class GitHubClient:
             logger.error(f"Network error fetching PR: {e}")
             raise GitHubAPIError(f"Network error: {str(e)}")
     
+    async def get_pr_diff(self, pr_info: GitHubPRInfo) -> str:
+        """Get the full diff for the PR.
+        
+        Args:
+            pr_info: Parsed PR information
+            
+        Returns:
+            str: Full diff content in unified format
+        """
+        try:
+            # Get PR diff in unified format
+            response = await self._client.get(
+                f"{self.BASE_URL}/repos/{pr_info.full_repo}/pulls/{pr_info.pr_number}",
+                headers={"Accept": "application/vnd.github.diff"}
+            )
+            
+            if response.status_code != 200:
+                raise GitHubAPIError(
+                    f"Failed to fetch PR diff: {response.status_code}",
+                    response.status_code
+                )
+            
+            diff_content = response.text
+            logger.info(f"Fetched diff for PR #{pr_info.pr_number} ({len(diff_content)} chars)")
+            
+            return diff_content
+            
+        except httpx.RequestError as e:
+            logger.error(f"Network error fetching PR diff: {e}")
+            raise GitHubAPIError(f"Network error: {str(e)}")
+    
     async def get_pr_files(self, pr_info: GitHubPRInfo) -> List[Dict[str, Any]]:
         """Get list of files changed in the PR.
         
@@ -104,52 +135,6 @@ class GitHubClient:
             logger.error(f"Network error fetching PR files: {e}")
             raise GitHubAPIError(f"Network error: {str(e)}")
     
-    async def get_pr_diff(self, pr_info: GitHubPRInfo, format: str = "diff") -> str:
-        """Get PR diff in specified format.
-        
-        Args:
-            pr_info: Parsed PR information
-            format: Diff format ("diff", "patch", or "json")
-            
-        Returns:
-            str: PR diff content
-        """
-        try:
-            accept_headers = {
-                "diff": "application/vnd.github.diff",
-                "patch": "application/vnd.github.patch", 
-                "json": "application/vnd.github+json"
-            }
-            
-            if format not in accept_headers:
-                raise ValueError(f"Invalid format: {format}. Must be one of: {list(accept_headers.keys())}")
-            
-            # Create a new client with specific Accept header for this request
-            async with httpx.AsyncClient(
-                headers={
-                    "Authorization": f"Bearer {self.access_token}",
-                    "Accept": accept_headers[format],
-                    "X-GitHub-Api-Version": self.API_VERSION,
-                    "User-Agent": "CodeReview-Platform/1.0"
-                },
-                timeout=30.0
-            ) as client:
-                response = await client.get(pr_info.api_url)
-                
-                if response.status_code != 200:
-                    raise GitHubAPIError(
-                        f"Failed to fetch PR diff: {response.status_code}",
-                        response.status_code
-                    )
-                
-                if format == "json":
-                    return response.json()
-                else:
-                    return response.text
-                    
-        except httpx.RequestError as e:
-            logger.error(f"Network error fetching PR diff: {e}")
-            raise GitHubAPIError(f"Network error: {str(e)}")
     
     async def get_file_content(self, owner: str, repo: str, file_path: str, ref: str = "main") -> str:
         """Get content of a specific file from repository.

@@ -17,10 +17,37 @@ frontend/
 │   ├── Footer.tsx         # Page footer
 │   ├── PRQuestionBox.tsx  # PR question input
 │   ├── ReviewResults.tsx  # Review output display
+│   ├── AgentCodeEditor.tsx # **NEW** - Pydantic AI interactive editor
 │   └── ui/               # Reusable UI components
 ├── lib/hooks/            # Custom React hooks
 └── package.json          # Dependencies & scripts
 ```
+
+#### New Component: AgentCodeEditor
+
+The `AgentCodeEditor` component provides an interactive code editing experience with AI-powered analysis:
+
+```tsx
+import AgentCodeEditor from './components/AgentCodeEditor'
+
+function MyPage() {
+  return (
+    <AgentCodeEditor 
+      initialCode="def hello():\n    print('Hello, World!')"
+      language="python"
+      onCodeChange={(code) => console.log('Code changed:', code)}
+    />
+  )
+}
+```
+
+**Features:**
+- Real-time code analysis via WebSocket or HTTP API
+- Interactive recommendation preview and application
+- Syntax highlighting for multiple languages
+- Confidence scoring for AI recommendations
+- Undo/redo support for applied fixes
+- Progress tracking during analysis
 
 ### Backend (`/backend`)
 ```
@@ -210,16 +237,34 @@ REASONING_MODEL=o4-mini  # Your Azure deployment name
 
 - **General Health**: `GET /health` - Check server status and agents
 - **Azure OpenAI Health**: `GET /health/azure` - Test Azure connection
+- **Pydantic AI Health**: `GET /api/v2/health` - Test v2 agent system
 
-### AI Agents
+### AI Agent Systems
 
-The system uses 5 specialized AI agents powered by Azure OpenAI:
+The platform now supports two agent architectures:
 
+#### Legacy AI Agents (v1)
 1. **Code Quality Agent** - Analyzes code structure, complexity, naming conventions
 2. **Security Agent** - Identifies vulnerabilities, security patterns, risks
 3. **Performance Agent** - Detects performance issues, optimization opportunities
 4. **Best Practices Agent** - Checks framework conventions, design patterns
 5. **Q&A Agent** - Answers questions about code and provides explanations
+
+#### Pydantic AI Agents (v2) - **NEW**
+Enhanced agent system with type safety, streaming, and interactive editing:
+
+1. **Code Analyzer Agent** - Advanced code quality analysis with pattern detection
+2. **Security Analysis Agent** - Comprehensive vulnerability scanning
+3. **Performance Analysis Agent** - Algorithmic efficiency and optimization detection
+4. **Code Fix Agent** - Automated fix generation with validation
+5. **Code Editor Agent** - Interactive editing with undo/redo support
+
+**Key v2 Features:**
+- **Type-Safe Operations** - Full Pydantic validation for all agent interactions
+- **Streaming Analysis** - Real-time progress updates via WebSocket
+- **Interactive Editing** - Review and apply fixes with preview
+- **Session Management** - Persistent editing sessions with history
+- **Confidence Scoring** - AI confidence levels for all recommendations
 
 ### Testing Azure Integration
 
@@ -233,11 +278,37 @@ python start_server.py
 
 ### API Endpoints
 
+#### Legacy API (v1)
 - **POST /review** - Analyze pasted code
 - **POST /review/github-pr** - Analyze GitHub pull request
 - **POST /upload** - Analyze uploaded code file
 - **POST /ask** - Ask questions about previous review
 - **GET /languages** - Get supported programming languages
+
+#### Pydantic AI API (v2) - **NEW**
+- **POST /api/v2/analyze** - Enhanced code analysis with recommendations
+- **POST /api/v2/recommendations/apply** - Apply selected recommendations
+- **POST /api/v2/session/create** - Create interactive editing session
+- **GET /api/v2/session/{id}/status** - Get session status and diff
+- **POST /api/v2/validate** - Validate code syntax and semantics
+- **WebSocket /api/v2/ws/analysis** - Real-time analysis streaming
+- **WebSocket /api/v2/ws/session/{id}** - Interactive editing WebSocket
+
+#### WebSocket Events
+```javascript
+// Analysis WebSocket
+{
+  "type": "start_analysis",
+  "code": "def example():\n    pass",
+  "language": "python"
+}
+
+// Session WebSocket
+{
+  "type": "apply_recommendation",
+  "recommendation": { /* CodeRecommendation object */ }
+}
+```
 
 ## Additional Context
 
