@@ -582,7 +582,7 @@ export default function ReviewResultsPage({ reviewData, onViewDetails, onNewRevi
                       </span>
                     </div>
                     <div className="issue-line-info">
-                      Line {issue.lineNumber || '79'}
+                      {issue.lineNumber ? `Line ${issue.lineNumber}` : 'Multiple lines'}
                     </div>
                   </div>
                   
@@ -666,7 +666,7 @@ export default function ReviewResultsPage({ reviewData, onViewDetails, onNewRevi
                       </span>
                     </div>
                     <div className="issue-line-info">
-                      Line 79
+                      Line 45
                     </div>
                   </div>
                   
@@ -692,7 +692,7 @@ export default function ReviewResultsPage({ reviewData, onViewDetails, onNewRevi
                       </span>
                     </div>
                     <div className="issue-line-info">
-                      Line 249
+                      Line 127
                     </div>
                   </div>
                   
@@ -718,7 +718,7 @@ export default function ReviewResultsPage({ reviewData, onViewDetails, onNewRevi
                       </span>
                     </div>
                     <div className="issue-line-info">
-                      Line 576
+                      Line 203
                     </div>
                   </div>
                   
