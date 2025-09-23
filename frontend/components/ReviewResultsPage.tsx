@@ -42,7 +42,12 @@ export default function ReviewResultsPage({ reviewData, onViewDetails, onNewRevi
   const [rightPaneCollapsed, setRightPaneCollapsed] = useState(false)
 
   // Get the submitted code from reviewData
-  const sampleCode = reviewData?.original_code || reviewData?.code || `// No code available`
+  const originalCode = reviewData?.original_code || reviewData?.code || `// No code available`
+  const [modifiedCode, setModifiedCode] = useState<string>(originalCode)
+  const [appliedFixes, setAppliedFixes] = useState<Map<number, {originalLine: string, fixedLine: string, lineNumber: number}>>(new Map())
+  
+  // Use appropriate code based on view mode
+  const sampleCode = viewMode === 'original' ? originalCode : modifiedCode
 
   // Parse the review data into structured issues
   const parsedIssues = useMemo(() => {
@@ -142,13 +147,53 @@ export default function ReviewResultsPage({ reviewData, onViewDetails, onNewRevi
     try {
       // For now, simulate a successful fix since we have the suggested fix already
       if (issue.fixedCode || issue.suggestion) {
-        // Mark as fixed immediately
+        // Apply the fix to the code
+        let newCode = modifiedCode
+        
+        if (issue.lineNumber && issue.codeSnippet) {
+          // Try to replace the specific line
+          const lines = newCode.split('\n')
+          const lineIndex = issue.lineNumber - 1
+          
+          if (lineIndex >= 0 && lineIndex < lines.length) {
+            const originalLine = lines[lineIndex]
+            let fixedLine = originalLine
+            
+            // If we have a fixed code snippet, use it; otherwise use a simple replacement
+            if (issue.fixedCode) {
+              fixedLine = issue.fixedCode
+            } else {
+              // For example, if it's a print statement issue, replace with logging
+              if (issue.title.toLowerCase().includes('print')) {
+                fixedLine = originalLine.replace('print(', 'logging.info(')
+              } else if (issue.title.toLowerCase().includes('docstring') || issue.title.toLowerCase().includes('documentation')) {
+                // Add a simple docstring
+                const indent = originalLine.match(/^\s*/)?.[0] || ''
+                fixedLine = `${indent}"""Module docstring."""\n${originalLine}`
+              }
+            }
+            
+            // Track the fix for undo functionality
+            setAppliedFixes(prev => new Map(prev.set(issue.id, {
+              originalLine,
+              fixedLine,
+              lineNumber: issue.lineNumber
+            })))
+            
+            lines[lineIndex] = fixedLine
+            newCode = lines.join('\n')
+          }
+        }
+        
+        // Update the modified code
+        setModifiedCode(newCode)
+        
+        // Mark as fixed
         setFixedIssues(prev => new Set(prev.add(issue.id)))
         
         // Show success message
-        alert(`✅ Fix applied successfully!\n\nIssue: ${issue.title}\nSuggested fix: ${issue.suggestion}`)
+        alert(`✅ Fix applied successfully!\n\nIssue: ${issue.title}\nSuggested fix: ${issue.suggestion}\n\n💡 Switch to "Fixed" or "Diff" view to see changes.`)
         
-        // TODO: Integrate with backend fix endpoint when issue ID mapping is resolved
         console.log('Issue fixed:', {
           id: issue.id,
           title: issue.title,
@@ -345,14 +390,14 @@ export default function ReviewResultsPage({ reviewData, onViewDetails, onNewRevi
                   <i className="bi bi-dash-circle text-danger me-2"></i>
                   Original Code
                 </div>
-                {renderEnhancedCodeLines(lines, 'original')}
+                {renderEnhancedCodeLines(originalCode.split('\n'), 'original')}
               </div>
               <div className="diff-pane diff-after">
                 <div className="diff-header">
                   <i className="bi bi-plus-circle text-success me-2"></i>
                   Fixed Code
                 </div>
-                {renderEnhancedCodeLines(lines, 'fixed')}
+                {renderEnhancedCodeLines(modifiedCode.split('\n'), 'fixed')}
               </div>
             </div>
           ) : (
@@ -634,6 +679,26 @@ export default function ReviewResultsPage({ reviewData, onViewDetails, onNewRevi
                             className="btn btn-sm btn-outline-warning ms-2 undo-fix-btn"
                             onClick={(e) => {
                               e.stopPropagation();
+                              
+                              // Revert the code changes
+                              const fixInfo = appliedFixes.get(issue.id)
+                              if (fixInfo) {
+                                const lines = modifiedCode.split('\n')
+                                const lineIndex = fixInfo.lineNumber - 1
+                                if (lineIndex >= 0 && lineIndex < lines.length) {
+                                  lines[lineIndex] = fixInfo.originalLine
+                                  setModifiedCode(lines.join('\n'))
+                                }
+                                
+                                // Remove from applied fixes
+                                setAppliedFixes(prev => {
+                                  const newMap = new Map(prev)
+                                  newMap.delete(issue.id)
+                                  return newMap
+                                })
+                              }
+                              
+                              // Remove from fixed issues
                               setFixedIssues(prev => {
                                 const newSet = new Set(prev);
                                 newSet.delete(issue.id);
