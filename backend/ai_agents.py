@@ -100,8 +100,15 @@ Example Output:
                     else:
                         line_number = int(line_range)
                 
+                # Try multiple possible title fields from AI response
+                title = (issue_data.get("issue_title") or 
+                        issue_data.get("title") or 
+                        issue_data.get("issue") or 
+                        issue_data.get("name") or
+                        "Code Quality Issue")
+                
                 issue = CodeIssue(
-                    title=issue_data.get("issue_title", "Unknown Issue"),
+                    title=title,
                     description=issue_data.get("description", ""),
                     severity=issue_data.get("severity", "medium"),
                     category=issue_data.get("category", "quality"),

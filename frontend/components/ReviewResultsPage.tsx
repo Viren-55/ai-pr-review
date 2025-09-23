@@ -312,11 +312,11 @@ export default function ReviewResultsPage({ reviewData, onViewDetails, onNewRevi
               <div className="d-flex align-items-center">
                 <i className="bi bi-folder2-open me-2 text-muted"></i>
                 <span className="file-path">src/ </span>
-                <span className="file-name">{selectedFile?.split('/').pop() || 'crisp_report_data_extraction.py'}</span>
+                <span className="file-name">{selectedFile?.split('/').pop() || reviewData?.filename || 'submitted_code.py'}</span>
               </div>
               <div className="file-meta">
                 <span className="language-badge">Python</span>
-                <span className="line-count">• 2730 lines</span>
+                <span className="line-count">• {sampleCode.split('\n').length} lines</span>
               </div>
             </div>
             
@@ -373,21 +373,11 @@ export default function ReviewResultsPage({ reviewData, onViewDetails, onNewRevi
     )
   }
 
-  // Basic syntax highlighting for Python
+  // Clean syntax highlighting for Python without HTML markup
   const highlightPythonSyntax = (code: string) => {
+    // Return clean code without HTML markup to avoid showing HTML tags in the UI
+    // TODO: Implement proper syntax highlighting with CSS classes
     return code
-      // Keywords
-      .replace(/\b(def|class|if|else|elif|for|while|import|from|return|try|except|finally|with|as|in|and|or|not|is|pass|break|continue|yield|lambda|global|nonlocal)\b/g, 
-        '<span class="python-keyword">$1</span>')
-      // Strings
-      .replace(/(["'])((?:\\.|(?!\1)[^\\])*?)\1/g, '<span class="python-string">$&</span>')
-      // Comments
-      .replace(/#.*$/gm, '<span class="python-comment">$&</span>')
-      // Numbers
-      .replace(/\b\d+\.?\d*\b/g, '<span class="python-number">$&</span>')
-      // Built-ins
-      .replace(/\b(print|len|str|int|float|bool|list|dict|tuple|set|range|enumerate|zip|map|filter|sorted|reversed|sum|min|max|abs|round|type|isinstance|hasattr|getattr|setattr|delattr)\b/g,
-        '<span class="python-builtin">$1</span>')
   }
 
   const renderCodeLines = (lines: string[], mode: 'original' | 'fixed') => {
@@ -555,6 +545,21 @@ export default function ReviewResultsPage({ reviewData, onViewDetails, onNewRevi
         </div>
 
         <div className="enhanced-ai-content">
+          {/* Issues Section Header */}
+          <div className="issues-section-header">
+            <h5 className="issues-title">
+              <i className="bi bi-exclamation-triangle me-2"></i>
+              Code Issues {currentFileIssues.length > 0 && `(${currentFileIssues.length})`}
+            </h5>
+            {currentFileIssues.length > 0 && (
+              <div className="issues-summary">
+                <span className="text-muted">
+                  Found in {selectedFile ? selectedFile.split('/').pop() : 'current file'}
+                </span>
+              </div>
+            )}
+          </div>
+          
           {/* Enhanced Issue Cards */}
           <div className="ai-issues-section">
             {currentFileIssues.length > 0 ? (
@@ -595,6 +600,57 @@ export default function ReviewResultsPage({ reviewData, onViewDetails, onNewRevi
                       <div className="suggestion-text">
                         {issue.suggestion}
                       </div>
+                    </div>
+                    
+                    {/* Auto-Fix Actions */}
+                    <div className="issue-actions">
+                      {!fixedIssues.has(issue.id) ? (
+                        <div className="action-buttons">
+                          <button
+                            className="btn btn-sm btn-outline-primary apply-fix-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleFixIssue(issue);
+                            }}
+                            title="Apply AI-suggested fix"
+                          >
+                            <i className="bi bi-magic"></i>
+                            Apply Fix
+                          </button>
+                          <button
+                            className="btn btn-sm btn-outline-secondary preview-fix-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              // TODO: Show fix preview modal
+                              console.log('Preview fix for issue:', issue.id);
+                            }}
+                            title="Preview changes before applying"
+                          >
+                            <i className="bi bi-eye"></i>
+                            Preview
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="fix-applied-status">
+                          <i className="bi bi-check-circle-fill text-success"></i>
+                          <span className="text-success ms-2">Fix Applied</span>
+                          <button
+                            className="btn btn-sm btn-outline-warning ms-2 undo-fix-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setFixedIssues(prev => {
+                                const newSet = new Set(prev);
+                                newSet.delete(issue.id);
+                                return newSet;
+                              });
+                            }}
+                            title="Undo this fix"
+                          >
+                            <i className="bi bi-arrow-counterclockwise"></i>
+                            Undo
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
