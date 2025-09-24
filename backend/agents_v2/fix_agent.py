@@ -4,6 +4,9 @@ import re
 import uuid
 from typing import List, Dict, Any, Optional, Tuple
 
+from pydantic_ai import RunContext
+from typing import Any
+
 from .base_agent import BaseCodeAgent
 from .models import (
     CodeContext,
@@ -19,12 +22,12 @@ from .models import (
 class CodeFixAgent(BaseCodeAgent):
     """Agent specialized in generating and validating code fixes."""
     
-    def __init__(self, azure_client=None, model_name=None):
+    def __init__(self, async_azure_client=None, model_name=None):
         """Initialize code fix agent."""
         super().__init__(
             name="Code Fix Generator",
             description="Generates safe, tested fixes for identified code issues",
-            azure_client=azure_client,
+            async_azure_client=async_azure_client,
             model_name=model_name
         )
         
@@ -33,7 +36,7 @@ class CodeFixAgent(BaseCodeAgent):
         super()._register_tools()
         
         @self.agent.tool
-        async def generate_sql_injection_fix(code: str, issue_line: int) -> Dict[str, Any]:
+        async def generate_sql_injection_fix(ctx: RunContext[Any], code: str, issue_line: int) -> Dict[str, Any]:
             """Generate fix for SQL injection vulnerability.
             
             Args:
@@ -71,7 +74,7 @@ class CodeFixAgent(BaseCodeAgent):
             return {"error": "Could not generate fix"}
         
         @self.agent.tool
-        async def fix_naming_convention(code: str, issue_line: int, convention: str) -> Dict[str, Any]:
+        async def fix_naming_convention(ctx: RunContext[Any], code: str, issue_line: int, convention: str) -> Dict[str, Any]:
             """Fix naming convention issues.
             
             Args:
@@ -119,7 +122,7 @@ class CodeFixAgent(BaseCodeAgent):
             }
         
         @self.agent.tool
-        async def optimize_loop(code: str, issue_line: int) -> Dict[str, Any]:
+        async def optimize_loop(ctx: RunContext[Any], code: str, issue_line: int) -> Dict[str, Any]:
             """Optimize inefficient loop patterns.
             
             Args:
@@ -179,7 +182,7 @@ class CodeFixAgent(BaseCodeAgent):
             }
         
         @self.agent.tool
-        async def fix_exception_handling(code: str, issue_line: int) -> Dict[str, Any]:
+        async def fix_exception_handling(ctx: RunContext[Any], code: str, issue_line: int) -> Dict[str, Any]:
             """Fix broad exception handling.
             
             Args:

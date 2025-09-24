@@ -4,6 +4,9 @@ import re
 import uuid
 from typing import List, Dict, Any
 
+from pydantic_ai import RunContext
+from typing import Any
+
 from .base_agent import BaseCodeAgent
 from .models import (
     CodeContext,
@@ -17,12 +20,12 @@ from .models import (
 class PerformanceAnalysisAgent(BaseCodeAgent):
     """Agent specialized in performance optimization."""
     
-    def __init__(self, azure_client=None, model_name=None):
+    def __init__(self, async_azure_client=None, model_name=None):
         """Initialize performance analysis agent."""
         super().__init__(
             name="Performance Optimizer",
             description="Identifies performance bottlenecks, inefficient algorithms, and optimization opportunities",
-            azure_client=azure_client,
+            async_azure_client=async_azure_client,
             model_name=model_name
         )
         
@@ -31,7 +34,7 @@ class PerformanceAnalysisAgent(BaseCodeAgent):
         super()._register_tools()
         
         @self.agent.tool
-        async def detect_inefficient_loops(code: str) -> List[Dict[str, Any]]:
+        async def detect_inefficient_loops(ctx: RunContext[Any], code: str) -> List[Dict[str, Any]]:
             """Detect inefficient loop patterns.
             
             Args:
@@ -82,7 +85,7 @@ class PerformanceAnalysisAgent(BaseCodeAgent):
             return issues
         
         @self.agent.tool
-        async def detect_database_issues(code: str) -> List[Dict[str, Any]]:
+        async def detect_database_issues(ctx: RunContext[Any], code: str) -> List[Dict[str, Any]]:
             """Detect database performance issues.
             
             Args:
@@ -138,7 +141,7 @@ class PerformanceAnalysisAgent(BaseCodeAgent):
             return issues
         
         @self.agent.tool
-        async def detect_memory_issues(code: str) -> List[Dict[str, Any]]:
+        async def detect_memory_issues(ctx: RunContext[Any], code: str) -> List[Dict[str, Any]]:
             """Detect potential memory issues.
             
             Args:
@@ -188,7 +191,7 @@ class PerformanceAnalysisAgent(BaseCodeAgent):
             return issues
         
         @self.agent.tool
-        async def detect_algorithm_issues(code: str) -> List[Dict[str, Any]]:
+        async def detect_algorithm_issues(ctx: RunContext[Any], code: str) -> List[Dict[str, Any]]:
             """Detect inefficient algorithms.
             
             Args:
@@ -230,9 +233,25 @@ class PerformanceAnalysisAgent(BaseCodeAgent):
             List of performance issues
         """
         issues = []
+        lines = context.code.split('\n')
         
-        # Detect inefficient loops
-        loop_issues = await self.agent.tools.detect_inefficient_loops(context.code)
+        # Detect inefficient loops directly
+        loop_issues = []
+        patterns = [
+            (r'for.*in.*range\(len\(', "Using range(len()) instead of enumerate()", "medium"),
+            (r'\.append\(.*\).*for.*in', "List append in loop instead of list comprehension", "low"),
+            (r'for.*in.*\.keys\(\)', "Iterating over .keys() unnecessarily", "low"),
+        ]
+        
+        for line_num, line in enumerate(lines, 1):
+            for pattern, description, severity in patterns:
+                if re.search(pattern, line):
+                    loop_issues.append({
+                        "line": line_num,
+                        "description": description,
+                        "code": line.strip(),
+                        "severity": severity
+                    })
         for issue in loop_issues:
             issues.append(CodeIssue(
                 id=str(uuid.uuid4()),
@@ -250,8 +269,16 @@ class PerformanceAnalysisAgent(BaseCodeAgent):
                 detected_by=self.name
             ))
         
-        # Detect database issues
-        db_issues = await self.agent.tools.detect_database_issues(context.code)
+        # Detect database issues directly
+        db_issues = []
+        for line_num, line in enumerate(lines, 1):
+            if re.search(r'SELECT\s+\*', line, re.IGNORECASE):
+                db_issues.append({
+                    "line": line_num,
+                    "type": "select_all",
+                    "description": "SELECT * can fetch unnecessary data",
+                    "severity": "low"
+                })
         for issue in db_issues:
             title_map = {
                 "n_plus_one": "N+1 Query Problem",
@@ -273,8 +300,15 @@ class PerformanceAnalysisAgent(BaseCodeAgent):
                 detected_by=self.name
             ))
         
-        # Detect memory issues
-        memory_issues = await self.agent.tools.detect_memory_issues(context.code)
+        # Detect memory issues directly
+        memory_issues = []
+        for line_num, line in enumerate(lines, 1):
+            if re.search(r'\.read\(\)|\.readlines\(\)', line):
+                memory_issues.append({
+                    "line": line_num,
+                    "description": "Reading entire file into memory - consider streaming",
+                    "severity": "medium"
+                })
         for issue in memory_issues:
             issues.append(CodeIssue(
                 id=str(uuid.uuid4()),
@@ -291,8 +325,21 @@ class PerformanceAnalysisAgent(BaseCodeAgent):
                 detected_by=self.name
             ))
         
-        # Detect algorithm issues
-        algo_issues = await self.agent.tools.detect_algorithm_issues(context.code)
+        # Detect algorithm issues directly
+        algo_issues = []
+        algo_patterns = [
+            (r'if.*in.*list\(|if.*in.*\[', "Using 'in' with list - O(n) operation", "medium"),
+            (r'len\(.*\)\s*==\s*0|len\(.*\)\s*!=\s*0', "Use boolean evaluation instead of len()", "low"),
+        ]
+        
+        for line_num, line in enumerate(lines, 1):
+            for pattern, description, severity in algo_patterns:
+                if re.search(pattern, line):
+                    algo_issues.append({
+                        "line": line_num,
+                        "description": description,
+                        "severity": severity
+                    })
         for issue in algo_issues:
             issues.append(CodeIssue(
                 id=str(uuid.uuid4()),

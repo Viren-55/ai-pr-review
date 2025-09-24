@@ -24,26 +24,26 @@ logger = logging.getLogger(__name__)
 class AgentOrchestrator:
     """Orchestrates multiple AI agents for comprehensive code analysis."""
     
-    def __init__(self, azure_client=None, model_name=None):
+    def __init__(self, async_azure_client=None, model_name=None):
         """Initialize the orchestrator with all agents.
         
         Args:
-            azure_client: Azure OpenAI client
+            async_azure_client: Async Azure OpenAI client
             model_name: Model deployment name
         """
-        self.azure_client = azure_client
+        self.async_azure_client = async_azure_client
         self.model_name = model_name
         
-        # Initialize all analysis agents
+        # Initialize all analysis agents with async Azure client
         self.agents = {
-            'code_analyzer': CodeAnalyzerAgent(azure_client, model_name),
-            'security_agent': SecurityAnalysisAgent(azure_client, model_name),
-            'performance_agent': PerformanceAnalysisAgent(azure_client, model_name),
-            'fix_agent': CodeFixAgent(azure_client, model_name),
-            'editor_agent': CodeEditorAgent(azure_client, model_name)
+            'code_analyzer': CodeAnalyzerAgent(async_azure_client, model_name),
+            'security_agent': SecurityAnalysisAgent(async_azure_client, model_name),
+            'performance_agent': PerformanceAnalysisAgent(async_azure_client, model_name),
+            'fix_agent': CodeFixAgent(async_azure_client, model_name),
+            'editor_agent': CodeEditorAgent(async_azure_client, model_name)
         }
         
-        logger.info(f"Initialized orchestrator with {len(self.agents)} agents")
+        logger.info(f"Initialized orchestrator with {len(self.agents)} agents using AsyncAzureOpenAI")
     
     async def analyze_code_streaming(
         self,
@@ -206,13 +206,24 @@ class AgentOrchestrator:
         Returns:
             Complete analysis result
         """
+        import time
+        start_time = time.time()
+        logger.info(f"[ORCHESTRATOR] Starting code analysis for {context.language} code ({len(context.code)} chars)")
+        
         # Collect all streaming results
         final_result = None
         
         async for update in self.analyze_code_streaming(context, include_recommendations):
-            if update["type"] == "analysis_complete":
+            if update["type"] == "agent_start":
+                logger.info(f"[ORCHESTRATOR] Agent '{update['agent']}' starting...")
+            elif update["type"] == "agent_complete":
+                logger.info(f"[ORCHESTRATOR] Agent '{update['agent']}' completed: {update['issues_found']} issues in {update['processing_time']:.2f}s")
+            elif update["type"] == "analysis_complete":
                 final_result = AnalysisResult(**update["result"])
                 break
+        
+        total_time = time.time() - start_time
+        logger.info(f"[ORCHESTRATOR] ✅ Analysis complete in {total_time*1000:.2f}ms")
         
         return final_result or AnalysisResult(
             id="error",

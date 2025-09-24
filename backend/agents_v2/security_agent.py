@@ -4,6 +4,8 @@ import re
 import uuid
 from typing import List, Dict, Any
 
+from pydantic_ai import RunContext
+
 from .base_agent import BaseCodeAgent
 from .models import (
     CodeContext,
@@ -17,12 +19,12 @@ from .models import (
 class SecurityAnalysisAgent(BaseCodeAgent):
     """Agent specialized in security vulnerability detection."""
     
-    def __init__(self, azure_client=None, model_name=None):
+    def __init__(self, async_azure_client=None, model_name=None):
         """Initialize security analysis agent."""
         super().__init__(
             name="Security Vulnerability Scanner",
             description="Detects security vulnerabilities, injection risks, and unsafe patterns",
-            azure_client=azure_client,
+            async_azure_client=async_azure_client,
             model_name=model_name
         )
         
@@ -31,10 +33,11 @@ class SecurityAnalysisAgent(BaseCodeAgent):
         super()._register_tools()
         
         @self.agent.tool
-        async def detect_sql_injection(code: str) -> List[Dict[str, Any]]:
+        async def detect_sql_injection(ctx: RunContext[Any], code: str) -> List[Dict[str, Any]]:
             """Detect potential SQL injection vulnerabilities.
             
             Args:
+                ctx: Run context
                 code: Code to analyze
                 
             Returns:
@@ -65,10 +68,11 @@ class SecurityAnalysisAgent(BaseCodeAgent):
             return vulnerabilities
         
         @self.agent.tool
-        async def detect_xss_vulnerabilities(code: str) -> List[Dict[str, Any]]:
+        async def detect_xss_vulnerabilities(ctx: RunContext[Any], code: str) -> List[Dict[str, Any]]:
             """Detect potential XSS vulnerabilities.
             
             Args:
+                ctx: Run context
                 code: Code to analyze
                 
             Returns:
@@ -100,10 +104,11 @@ class SecurityAnalysisAgent(BaseCodeAgent):
             return vulnerabilities
         
         @self.agent.tool
-        async def detect_hardcoded_secrets(code: str) -> List[Dict[str, Any]]:
+        async def detect_hardcoded_secrets(ctx: RunContext[Any], code: str) -> List[Dict[str, Any]]:
             """Detect hardcoded secrets and credentials.
             
             Args:
+                ctx: Run context
                 code: Code to analyze
                 
             Returns:
@@ -142,10 +147,11 @@ class SecurityAnalysisAgent(BaseCodeAgent):
             return secrets
         
         @self.agent.tool
-        async def detect_insecure_operations(code: str) -> List[Dict[str, Any]]:
+        async def detect_insecure_operations(ctx: RunContext[Any], code: str) -> List[Dict[str, Any]]:
             """Detect insecure operations and unsafe patterns.
             
             Args:
+                ctx: Run context
                 code: Code to analyze
                 
             Returns:
@@ -190,80 +196,118 @@ class SecurityAnalysisAgent(BaseCodeAgent):
         """
         issues = []
         
-        # Detect SQL injection
-        sql_vulns = await self.agent.tools.detect_sql_injection(context.code)
-        for vuln in sql_vulns:
-            issues.append(CodeIssue(
-                id=str(uuid.uuid4()),
-                title="SQL Injection Vulnerability",
-                description=vuln["description"],
-                severity=SeverityLevel(vuln["severity"]),
-                category=IssueCategory.SECURITY,
-                location=CodeLocation(
-                    file_path=context.file_path or "unknown",
-                    line_start=vuln["line"],
-                    line_end=vuln["line"]
-                ),
-                code_snippet=vuln["code"],
-                confidence=0.95,
-                detected_by=self.name
-            ))
-        
-        # Detect XSS vulnerabilities
-        xss_vulns = await self.agent.tools.detect_xss_vulnerabilities(context.code)
-        for vuln in xss_vulns:
-            issues.append(CodeIssue(
-                id=str(uuid.uuid4()),
-                title="Cross-Site Scripting (XSS) Risk",
-                description=vuln["description"],
-                severity=SeverityLevel(vuln["severity"]),
-                category=IssueCategory.SECURITY,
-                location=CodeLocation(
-                    file_path=context.file_path or "unknown",
-                    line_start=vuln["line"],
-                    line_end=vuln["line"]
-                ),
-                code_snippet=vuln["code"],
-                confidence=0.9,
-                detected_by=self.name
-            ))
-        
-        # Detect hardcoded secrets
-        secrets = await self.agent.tools.detect_hardcoded_secrets(context.code)
-        for secret in secrets:
-            issues.append(CodeIssue(
-                id=str(uuid.uuid4()),
-                title="Hardcoded Secret Detected",
-                description=secret["description"],
-                severity=SeverityLevel(secret["severity"]),
-                category=IssueCategory.SECURITY,
-                location=CodeLocation(
-                    file_path=context.file_path or "unknown",
-                    line_start=secret["line"],
-                    line_end=secret["line"]
-                ),
-                code_snippet=secret["code"],
-                confidence=0.85,
-                detected_by=self.name
-            ))
-        
-        # Detect insecure operations
-        insecure_ops = await self.agent.tools.detect_insecure_operations(context.code)
-        for op in insecure_ops:
-            issues.append(CodeIssue(
-                id=str(uuid.uuid4()),
-                title="Insecure Operation Detected",
-                description=op["description"],
-                severity=SeverityLevel(op["severity"]),
-                category=IssueCategory.SECURITY,
-                location=CodeLocation(
-                    file_path=context.file_path or "unknown",
-                    line_start=op["line"],
-                    line_end=op["line"]
-                ),
-                code_snippet=op["code"],
-                confidence=0.8,
-                detected_by=self.name
-            ))
+        # Use Pydantic AI agent to analyze code
+        prompt = f"""Analyze this {context.language} code for security vulnerabilities:
+
+```{context.language}
+{context.code}
+```
+
+Find and list ALL security issues including:
+- SQL injection vulnerabilities
+- XSS (Cross-site scripting) vulnerabilities
+- Hardcoded secrets and credentials
+- Insecure operations (pickle, eval, os.system, etc.)
+- Weak cryptography
+- Improper exception handling
+- Any other security concerns
+
+For each issue provide:
+- Line number (exact line number from the code)
+- Issue type (e.g., "SQL injection", "Hardcoded secret", etc.)
+- Description (clear explanation of the vulnerability)
+- Severity (critical/high/medium/low)
+
+Format each issue clearly on separate lines."""
+
+        try:
+            # Run agent to get AI analysis
+            result = await self.agent.run(prompt)
+            ai_response = result.output
+            
+            # Parse AI response to extract structured issues
+            lines = context.code.split('\n')
+            
+            # Parse response line by line
+            for response_line in ai_response.split('\n'):
+                response_line = response_line.strip()
+                if not response_line:
+                    continue
+                
+                # Try to extract issue information
+                # Format: "Line X" or "Line X-Y" followed by issue details
+                line_match = re.search(r'(?:Line|line)\s+(\d+)(?:\s*[-–]\s*(\d+))?', response_line, re.IGNORECASE)
+                
+                if line_match:
+                    line_start = int(line_match.group(1))
+                    line_end = int(line_match.group(2)) if line_match.group(2) else line_start
+                    
+                    # Extract issue type
+                    issue_type = "Security Issue"
+                    type_match = re.search(r'Issue type:\s*([^\n]+)', response_line, re.IGNORECASE)
+                    if type_match:
+                        issue_type = type_match.group(1).strip()
+                    elif 'SQL injection' in response_line or 'SQL Injection' in response_line:
+                        issue_type = "SQL Injection"
+                    elif 'XSS' in response_line or 'cross-site scripting' in response_line.lower():
+                        issue_type = "Cross-Site Scripting (XSS)"
+                    elif 'secret' in response_line.lower() or 'password' in response_line.lower() or 'api key' in response_line.lower():
+                        issue_type = "Hardcoded Secret"
+                    elif 'pickle' in response_line.lower() or 'deserializ' in response_line.lower():
+                        issue_type = "Insecure Deserialization"
+                    elif 'command injection' in response_line.lower() or 'os.system' in response_line:
+                        issue_type = "Command Injection"
+                    
+                    # Extract description
+                    description = response_line
+                    desc_match = re.search(r'Description:\s*([^\n]+)', response_line, re.IGNORECASE)
+                    if desc_match:
+                        description = desc_match.group(1).strip()
+                    else:
+                        # Use the whole line after line number
+                        desc_parts = re.split(r'(?:Line|line)\s+\d+(?:\s*[-–]\s*\d+)?\s*[:\-–]?\s*', response_line, maxsplit=1, flags=re.IGNORECASE)
+                        if len(desc_parts) > 1:
+                            description = desc_parts[1].strip()
+                    
+                    # Extract severity
+                    severity = "medium"
+                    sev_match = re.search(r'Severity:\s*(critical|high|medium|low)', response_line, re.IGNORECASE)
+                    if sev_match:
+                        severity = sev_match.group(1).lower()
+                    elif 'critical' in response_line.lower():
+                        severity = "critical"
+                    elif 'high' in response_line.lower():
+                        severity = "high"
+                    
+                    # Get code snippet
+                    code_snippet = ""
+                    if 0 < line_start <= len(lines):
+                        code_snippet = lines[line_start - 1].strip()
+                    
+                    # Create issue
+                    issues.append(CodeIssue(
+                        id=str(uuid.uuid4()),
+                        title=issue_type,
+                        description=description,
+                        severity=SeverityLevel(severity),
+                        category=IssueCategory.SECURITY,
+                        location=CodeLocation(
+                            file_path=context.file_path or "unknown",
+                            line_start=line_start,
+                            line_end=line_end
+                        ),
+                        code_snippet=code_snippet,
+                        confidence=0.9,
+                        detected_by=self.name
+                    ))
+            
+            # If AI found issues, return them
+            if issues:
+                return issues
+            
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"AI analysis failed: {e}, using fallback")
         
         return issues

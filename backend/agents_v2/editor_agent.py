@@ -4,6 +4,9 @@ import uuid
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 
+from pydantic_ai import RunContext
+from typing import Any
+
 from .base_agent import BaseCodeAgent
 from .models import (
     CodeContext,
@@ -18,12 +21,12 @@ from .models import (
 class CodeEditorAgent(BaseCodeAgent):
     """Agent specialized in interactive code editing and modification."""
     
-    def __init__(self, azure_client=None, model_name=None):
+    def __init__(self, async_azure_client=None, model_name=None):
         """Initialize code editor agent."""
         super().__init__(
             name="Interactive Code Editor",
             description="Handles interactive code editing, multi-file refactoring, and safe transformations",
-            azure_client=azure_client,
+            async_azure_client=async_azure_client,
             model_name=model_name
         )
         self.active_sessions: Dict[str, EditSession] = {}
@@ -33,7 +36,7 @@ class CodeEditorAgent(BaseCodeAgent):
         super()._register_tools()
         
         @self.agent.tool
-        async def create_edit_session(code: str, language: str, file_path: str = None) -> str:
+        async def create_edit_session(ctx: RunContext[Any], code: str, language: str, file_path: str = None) -> str:
             """Create a new editing session.
             
             Args:
@@ -60,6 +63,7 @@ class CodeEditorAgent(BaseCodeAgent):
         
         @self.agent.tool
         async def apply_edit_operation(
+            ctx: RunContext[Any],
             session_id: str,
             operation: EditOperation
         ) -> Dict[str, Any]:
@@ -132,7 +136,7 @@ class CodeEditorAgent(BaseCodeAgent):
                 return {"error": str(e)}
         
         @self.agent.tool
-        async def undo_last_edit(session_id: str) -> Dict[str, Any]:
+        async def undo_last_edit(ctx: RunContext[Any], session_id: str) -> Dict[str, Any]:
             """Undo the last edit operation.
             
             Args:
@@ -177,7 +181,7 @@ class CodeEditorAgent(BaseCodeAgent):
             }
         
         @self.agent.tool
-        async def redo_last_edit(session_id: str) -> Dict[str, Any]:
+        async def redo_last_edit(ctx: RunContext[Any], session_id: str) -> Dict[str, Any]:
             """Redo the last undone edit operation.
             
             Args:
@@ -222,7 +226,7 @@ class CodeEditorAgent(BaseCodeAgent):
             }
         
         @self.agent.tool
-        async def validate_session_code(session_id: str) -> ValidationResult:
+        async def validate_session_code(ctx: RunContext[Any], session_id: str) -> ValidationResult:
             """Validate the current code in a session.
             
             Args:

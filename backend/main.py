@@ -9,7 +9,7 @@ import logging
 from datetime import datetime
 from dotenv import load_dotenv
 import uvicorn
-from openai import AzureOpenAI
+from openai import AzureOpenAI, AsyncAzureOpenAI
 from typing import List, Optional
 import asyncio
 import httpx
@@ -25,10 +25,11 @@ from models import (
     GitHubUserResponse, GitHubPRRequest, PRAnalysisResponse, PRIssueResponse,
     AuthCallbackRequest, AuthResponse
 )
-from ai_agents import (
-    create_ai_orchestrator, create_code_fixer, 
-    AIAgentOrchestrator, CodeFixerAgent
-)
+# Legacy ai_agents.py removed - using agents_v2 (Pydantic AI)
+# from ai_agents import (
+#     create_ai_orchestrator, create_code_fixer, 
+#     AIAgentOrchestrator, CodeFixerAgent
+# )
 # GitHub Integration
 from auth import (
     GitHubOAuth, GitHubAuthConfig, TokenManager, get_current_user, 
@@ -56,17 +57,28 @@ except ImportError as e:
 # Note: Environment variables are optional for demo mode
 # In production, ensure proper Azure OpenAI credentials are configured
 
-# Initialize Azure OpenAI client (or None for demo mode)
+# Initialize Azure OpenAI clients (both sync and async)
 api_key = os.getenv("REASONING_AZURE_OPENAI_API_KEY")
+azure_endpoint = os.getenv("REASONING_AZURE_OPENAI_ENDPOINT")
+api_version = os.getenv("REASONING_AZURE_API_VERSION")
+
 if api_key and api_key not in ["your-api-key-here", "demo-mode"]:
+    # Sync client for legacy code
     azure_client = AzureOpenAI(
         api_key=api_key,
-        azure_endpoint=os.getenv("REASONING_AZURE_OPENAI_ENDPOINT"),
-        api_version=os.getenv("REASONING_AZURE_API_VERSION")
+        azure_endpoint=azure_endpoint,
+        api_version=api_version
     )
-    logger.info("Azure OpenAI client initialized with real credentials")
+    # Async client for Pydantic AI agents
+    async_azure_client = AsyncAzureOpenAI(
+        api_key=api_key,
+        azure_endpoint=azure_endpoint,
+        api_version=api_version
+    )
+    logger.info(f"Azure OpenAI clients initialized - Endpoint: {azure_endpoint}, Model: {os.getenv('REASONING_MODEL')}")
 else:
     azure_client = None
+    async_azure_client = None
     logger.info("Running in demo mode - using mock responses")
 
 # Initialize AI agents (delayed to avoid startup blocking)
@@ -77,8 +89,14 @@ pydantic_orchestrator = None
 def get_ai_orchestrator():
     """Get AI orchestrator, creating it if needed."""
     global ai_orchestrator
-    if ai_orchestrator is None and azure_client is not None:
-        ai_orchestrator = create_ai_orchestrator(azure_client, os.getenv("REASONING_MODEL"))
+    if ai_orchestrator is None and async_azure_client is not None:
+        # Use Pydantic AI orchestrator (agents_v2) with async client
+        from agents_v2 import AgentOrchestrator
+        ai_orchestrator = AgentOrchestrator(
+            async_azure_client=async_azure_client,
+            model_name=os.getenv("REASONING_MODEL")
+        )
+        logger.info("Pydantic AI orchestrator initialized with AsyncAzureOpenAI")
     return ai_orchestrator
 
 def get_pydantic_orchestrator():
@@ -98,12 +116,18 @@ def get_code_fixer():
     """Get code fixer, creating it if needed."""
     global code_fixer
     if code_fixer is None and azure_client is not None:
-        code_fixer = create_code_fixer(azure_client, os.getenv("REASONING_MODEL"))
+        # Use Pydantic AI fix agent (agents_v2)
+        from agents_v2 import CodeFixAgent
+        code_fixer = CodeFixAgent(
+            azure_client=azure_client,
+            model_name=os.getenv("REASONING_MODEL")
+        )
+        logger.info("Pydantic AI fix agent initialized")
     return code_fixer
 
 def is_demo_mode():
     """Check if we're running in demo mode."""
-    # Force disable demo mode to use real PR analysis
+    # Demo mode is disabled - always use real AI analysis
     return False
 
 def generate_mock_analysis(code: str, language: str):
@@ -1079,15 +1103,24 @@ async def create_mock_submission(request: dict):
         }
     }
 
-@app.post("/api/submissions", response_model=CodeSubmissionResponse)
+@app.post("/api/submissions")  # Removed response_model to allow extra fields like timing
 async def create_submission(request: CodeSubmissionCreate, db: Session = Depends(get_db)):
     """Submit code for analysis."""
+    import time
+    start_time = time.time()
+    logger.info(f"[TIMING] Starting code submission analysis")
+    
     try:
         # Validate input
+        t_validation_start = time.time()
         if not request.code.strip():
             raise HTTPException(status_code=400, detail="Code cannot be empty")
+        t_validation_end = time.time()
+        validation_time_ms = (t_validation_end - t_validation_start) * 1000
+        logger.info(f"[TIMING] Input validation: {validation_time_ms:.2f}ms")
         
         # Create submission record
+        t_db_submission_start = time.time()
         submission = CodeSubmission(
             original_code=request.code,
             language=request.language,
@@ -1098,9 +1131,13 @@ async def create_submission(request: CodeSubmissionCreate, db: Session = Depends
         db.add(submission)
         db.commit()
         db.refresh(submission)
+        t_db_submission_end = time.time()
+        db_submission_time_ms = (t_db_submission_end - t_db_submission_start) * 1000
+        logger.info(f"[TIMING] Database submission record: {db_submission_time_ms:.2f}ms")
         
         # Run AI analysis with timeout and fallback
-        logger.info(f"Starting analysis for submission {submission.id}")
+        t_ai_analysis_start = time.time()
+        logger.info(f"[TIMING] Starting AI analysis for submission {submission.id}")
         
         if is_demo_mode():
             logger.info("Running in demo mode - using enhanced mock data")
@@ -1113,10 +1150,28 @@ async def create_submission(request: CodeSubmissionCreate, db: Session = Depends
                 if orchestrator is None:
                     raise Exception("AI orchestrator not available")
                     
-                issues, score, summary = await asyncio.wait_for(
-                    orchestrator.analyze_code(request.code, request.language),
+                # Use Pydantic AI orchestrator with proper context
+                t_context_start = time.time()
+                from agents_v2 import CodeContext
+                context = CodeContext(
+                    code=request.code,
+                    language=request.language,
+                    file_path=request.filename
+                )
+                logger.info(f"[TIMING] Context creation: {(time.time() - t_context_start)*1000:.2f}ms")
+                
+                t_orchestrator_start = time.time()
+                result = await asyncio.wait_for(
+                    orchestrator.analyze_code(context),
                     timeout=30.0  # 30 second timeout
                 )
+                logger.info(f"[TIMING] AI orchestrator analysis: {(time.time() - t_orchestrator_start)*1000:.2f}ms")
+                
+                # Extract issues, score, and summary from AnalysisResult
+                issues = result.issues if result else []
+                score = result.overall_score if result else 50
+                summary = result.summary if result else "Analysis completed"
+                logger.info(f"[TIMING] AI analysis complete - found {len(issues)} issues, score: {score}")
             except asyncio.TimeoutError:
                 logger.error("AI analysis timed out, using fallback")
                 # Fallback response
@@ -1131,35 +1186,52 @@ async def create_submission(request: CodeSubmissionCreate, db: Session = Depends
                 score = 50
                 summary = "Analysis timed out - using fallback response."
             except Exception as e:
-                logger.error(f"AI analysis failed: {e}, using mock data")
+                logger.error(f"[TIMING] AI analysis failed after {(time.time() - t_ai_analysis_start)*1000:.2f}ms: {e}")
+                logger.info("[TIMING] Falling back to mock analysis")
+                t_mock_start = time.time()
                 issues, score, summary = generate_mock_analysis(request.code, request.language)
+                logger.info(f"[TIMING] Mock analysis: {(time.time() - t_mock_start)*1000:.2f}ms")
         
         # Create analysis record
+        t_db_storage_start = time.time()
+        actual_analysis_time = time.time() - t_ai_analysis_start
+        ai_analysis_time_ms = actual_analysis_time * 1000
         analysis = CodeAnalysis(
             submission_id=submission.id,
             overall_score=score,
             analysis_summary=summary,
             model_used=os.getenv("REASONING_MODEL"),
-            analysis_time_seconds=3  # This would be calculated in real implementation
+            analysis_time_seconds=int(actual_analysis_time)
         )
         
         db.add(analysis)
         db.commit()
         db.refresh(analysis)
+        t_analysis_record_end = time.time()
+        analysis_record_time_ms = (t_analysis_record_end - t_db_storage_start) * 1000
+        logger.info(f"[TIMING] Database analysis record: {analysis_record_time_ms:.2f}ms")
         
         # Create issue records
+        t_issues_start = time.time()
         db_issues = []
         for issue in issues:
+            # Handle both Pydantic AI CodeIssue and legacy format
+            line_num = None
+            if hasattr(issue, 'location') and issue.location:
+                line_num = issue.location.line_start
+            elif hasattr(issue, 'line_number'):
+                line_num = issue.line_number
+            
             db_issue = DBCodeIssue(
                 submission_id=submission.id,
                 title=issue.title,
                 description=issue.description,
-                severity=issue.severity,
-                category=issue.category,
-                line_number=issue.line_number,
-                code_snippet=issue.code_snippet,
-                suggested_fix=issue.suggested_fix,
-                fix_explanation=issue.fix_explanation
+                severity=issue.severity.value if hasattr(issue.severity, 'value') else issue.severity,
+                category=issue.category.value if hasattr(issue.category, 'value') else issue.category,
+                line_number=line_num,
+                code_snippet=getattr(issue, 'code_snippet', None),
+                suggested_fix=getattr(issue, 'suggested_fix', None),
+                fix_explanation=getattr(issue, 'fix_explanation', None)
             )
             db.add(db_issue)
             db_issues.append(db_issue)
@@ -1169,11 +1241,33 @@ async def create_submission(request: CodeSubmissionCreate, db: Session = Depends
         # Refresh all objects to get IDs
         for db_issue in db_issues:
             db.refresh(db_issue)
+        t_issues_end = time.time()
+        issues_storage_time_ms = (t_issues_end - t_issues_start) * 1000
+        logger.info(f"[TIMING] Database issues ({len(issues)} records): {issues_storage_time_ms:.2f}ms")
         
-        logger.info(f"Analysis complete for submission {submission.id}: {len(issues)} issues, score {score}")
+        total_time = time.time() - start_time
+        logger.info(f"[TIMING] ✅ TOTAL submission time: {total_time*1000:.2f}ms ({total_time:.2f}s)")
+        logger.info(f"[TIMING] Analysis complete for submission {submission.id}: {len(issues)} issues, score {score}")
         
-        # Return full submission with analysis
-        return CodeSubmissionResponse(
+        # Calculate timing breakdown for frontend
+        # Total database storage time = analysis record + issues records
+        total_db_storage_time_ms = analysis_record_time_ms + issues_storage_time_ms
+        
+        timing_breakdown = {
+            "total_time_ms": round(total_time * 1000, 2),
+            "total_time_seconds": round(total_time, 2),
+            "steps": {
+                "validation": f"{validation_time_ms:.1f}ms" if validation_time_ms >= 0.1 else "< 0.1ms",
+                "database_submission": f"{db_submission_time_ms:.1f}ms",
+                "ai_analysis": f"{ai_analysis_time_ms:.1f}ms",
+                "database_storage": f"{total_db_storage_time_ms:.1f}ms"
+            },
+            "agents_used": 3,
+            "issues_found": len(issues)
+        }
+        
+        # Return full submission with analysis and timing
+        response_data = CodeSubmissionResponse(
             id=submission.id,
             original_code=submission.original_code,
             language=submission.language,
@@ -1190,9 +1284,21 @@ async def create_submission(request: CodeSubmissionCreate, db: Session = Depends
             )
         )
         
+        # Add timing metadata to response
+        # Use model_dump for Pydantic v2 compatibility
+        try:
+            response_dict = response_data.model_dump() if hasattr(response_data, 'model_dump') else response_data.dict()
+        except:
+            response_dict = dict(response_data)
+        
+        response_dict['timing'] = timing_breakdown
+        
+        return response_dict
+        
     except Exception as e:
         db.rollback()
-        logger.error(f"Submission failed: {e}")
+        total_time = time.time() - start_time
+        logger.error(f"[TIMING] ❌ Submission FAILED after {total_time*1000:.2f}ms: {e}")
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 
 @app.post("/api/upload", response_model=CodeSubmissionResponse)
@@ -1266,26 +1372,27 @@ async def fix_issue(issue_id: int, request: FixIssueRequest, db: Session = Depen
         if not submission:
             raise HTTPException(status_code=404, detail="Submission not found")
         
-        # Create issue object for the fixer
-        from ai_agents import CodeIssue as AICodeIssue
-        ai_issue = AICodeIssue(
+        # Create recommendation for the fixer
+        from agents_v2 import CodeRecommendation
+        
+        recommendation = CodeRecommendation(
+            issue_id=str(issue.id),
             title=issue.title,
             description=issue.description,
-            severity=issue.severity,
-            category=issue.category,
-            line_number=issue.line_number,
-            code_snippet=issue.code_snippet,
-            suggested_fix=issue.suggested_fix,
-            fix_explanation=issue.fix_explanation
+            original_code=issue.code_snippet or "",
+            suggested_code=issue.suggested_fix or "",
+            confidence=0.8,
+            impact="Fixes: " + issue.title
         )
         
         # Apply the fix
         fixer = get_code_fixer()
-        updated_code, success = await fixer.apply_fix(
+        updated_code, operation = await fixer.apply_fix(
             submission.original_code, 
-            ai_issue, 
-            submission.language
+            recommendation
         )
+        
+        success = updated_code != submission.original_code
         
         if success:
             # Update the submission with fixed code
@@ -1458,30 +1565,33 @@ async def review_code_legacy(request: CodeReviewRequest, db: Session = Depends(g
     submission = await create_submission(request, db)
     
     # Format response to match old API
-    if submission.analysis:
+    if submission.get('analysis'):
+        analysis = submission['analysis']
         issues_text = "\n".join([
-            f"**{issue.title}** ({issue.severity.upper()})\n{issue.description}\n"
-            for issue in submission.analysis.issues
+            f"**{issue['title']}** ({issue['severity'].upper()})\n{issue['description']}\n"
+            for issue in analysis.get('issues', [])
         ])
         
         review_text = f"""
-        Overall Score: {submission.analysis.overall_score}/100
+        Overall Score: {analysis.get('overall_score', 0)}/100
         
         Issues Found:
         {issues_text}
         
-        {submission.analysis.analysis_summary}
+        {analysis.get('analysis_summary', '')}
         """
     else:
         review_text = "Analysis pending..."
     
+    analysis = submission.get('analysis', {})
     return {
         "status": "success",
-        "language": submission.language,
+        "language": submission.get('language', 'unknown'),
         "review": review_text,
-        "timestamp": submission.created_at.isoformat(),
-        "model_used": submission.analysis.model_used if submission.analysis else "unknown",
-        "submission_id": submission.id
+        "timestamp": submission.get('created_at'),
+        "model_used": analysis.get('model_used', 'unknown') if analysis else "unknown",
+        "submission_id": submission.get('id'),
+        "timing": submission.get('timing', {})
     }
 
 @app.get("/languages")

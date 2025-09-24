@@ -7,7 +7,9 @@ from datetime import datetime
 from pydantic import BaseModel
 from pydantic_ai import Agent, Tool, RunContext
 from pydantic_ai.models.openai import OpenAIChatModel
-from openai import AzureOpenAI
+from pydantic_ai.models import KnownModelName
+from pydantic_ai.providers.openai import OpenAIProvider
+from openai import AsyncAzureOpenAI
 
 from .models import (
     CodeContext,
@@ -30,7 +32,7 @@ class BaseCodeAgent(Generic[T]):
         self,
         name: str,
         description: str,
-        azure_client: Optional[AzureOpenAI] = None,
+        async_azure_client: Optional[AsyncAzureOpenAI] = None,
         model_name: Optional[str] = None,
         system_prompt: Optional[str] = None
     ):
@@ -39,25 +41,27 @@ class BaseCodeAgent(Generic[T]):
         Args:
             name: Agent name
             description: Agent description
-            azure_client: Azure OpenAI client (optional)
+            async_azure_client: Async Azure OpenAI client (optional)
             model_name: Model deployment name
             system_prompt: Custom system prompt
         """
         self.name = name
         self.description = description
-        self.azure_client = azure_client
+        self.async_azure_client = async_azure_client
         self.model_name = model_name or os.getenv("REASONING_MODEL", "gpt-4")
         
-        # Initialize Pydantic AI agent
-        # Set up environment variables for Pydantic AI to use Azure OpenAI
-        if azure_client:
-            # Set OpenAI environment variables to point to Azure
-            os.environ['OPENAI_API_KEY'] = azure_client.api_key
-            os.environ['OPENAI_BASE_URL'] = str(azure_client.base_url)
-            self.model = f'openai:{self.model_name}'
+        # Initialize Pydantic AI agent with Azure OpenAI
+        if async_azure_client:
+            # Create OpenAIChatModel with Azure client as provider
+            self.model = OpenAIChatModel(
+                self.model_name,
+                provider=OpenAIProvider(openai_client=async_azure_client)
+            )
+            logger.info(f"[{self.name}] Initialized with AsyncAzureOpenAI - Model: {self.model_name}")
         else:
-            # Use default OpenAI (will need OPENAI_API_KEY)
+            # Fallback to default model (requires OPENAI_API_KEY)
             self.model = 'openai:gpt-4'
+            logger.warning(f"[{self.name}] No Azure client provided, using fallback")
             
         # Create the agent with tools
         self.agent = self._create_agent(system_prompt)
@@ -163,12 +167,15 @@ Always provide structured, type-safe responses."""
             Agent response with analysis results
         """
         start_time = datetime.now()
+        logger.info(f"[AGENT:{self.name}] Starting analysis...")
         
         try:
             # Run agent analysis
             result = await self._perform_analysis(context)
             
             processing_time = (datetime.now() - start_time).total_seconds()
+            issue_count = len(result) if isinstance(result, list) else 0
+            logger.info(f"[AGENT:{self.name}] ✅ Completed in {processing_time*1000:.2f}ms - found {issue_count} issues")
             
             return AgentResponse(
                 agent_name=self.name,
@@ -179,8 +186,8 @@ Always provide structured, type-safe responses."""
             )
             
         except Exception as e:
-            logger.error(f"Agent {self.name} analysis failed: {e}")
             processing_time = (datetime.now() - start_time).total_seconds()
+            logger.error(f"[AGENT:{self.name}] ❌ Failed after {processing_time*1000:.2f}ms: {e}")
             
             return AgentResponse(
                 agent_name=self.name,

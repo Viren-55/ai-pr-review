@@ -7,7 +7,7 @@ from datetime import datetime
 
 from .authenticated_client import GitHubClient, GitHubAPIError
 from .url_parser import GitHubURLParser, GitHubPRInfo
-from ai_agents import AIAgentOrchestrator, CodeIssue
+from agents_v2 import AgentOrchestrator as AIAgentOrchestrator, CodeIssue
 
 logger = logging.getLogger(__name__)
 
@@ -65,10 +65,18 @@ class PRAnalyzer:
             
             # Run AI analysis on the changes
             if analyzable_content:
-                issues, score, summary = await self.ai_orchestrator.analyze_code(
-                    analyzable_content, 
-                    language
+                # Use Pydantic AI orchestrator with CodeContext
+                from agents_v2 import CodeContext
+                context = CodeContext(
+                    code=analyzable_content,
+                    language=language,
+                    file_path=f"{pr_info.full_repo}/PR#{pr_info.pr_number}"
                 )
+                
+                result = await self.ai_orchestrator.analyze_code(context)
+                issues = result.issues if result else []
+                score = result.overall_score if result else 50
+                summary = result.summary if result else "Analysis completed"
             else:
                 # No analyzable code found
                 issues = []
