@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo } from 'react'
 import { Container, Row, Col, Card, Badge, Button, Nav, ProgressBar } from 'react-bootstrap'
+import TimingDisplay from './TimingDisplay'
 
 interface ReviewResultsPageProps {
   reviewData: any
@@ -668,6 +669,13 @@ export default function ReviewResultsPage({ reviewData, onViewDetails, onNewRevi
         </div>
 
         <div className="enhanced-ai-content">
+          {/* Performance Timing Display */}
+          {reviewData?.timing && (
+            <div className="mb-3">
+              <TimingDisplay timing={reviewData.timing} />
+            </div>
+          )}
+          
           {/* Issues Section Header */}
           <div className="issues-section-header">
             <h5 className="issues-title">
@@ -804,86 +812,14 @@ export default function ReviewResultsPage({ reviewData, onViewDetails, onNewRevi
                 </div>
               ))
             ) : (
-              // Sample issues from the design
-              <>
-                <div className="enhanced-issue-card selected">
-                  <div className="enhanced-issue-header">
-                    <div className="severity-indicator">
-                      <span className="severity-badge-enhanced high" style={{ backgroundColor: 'rgba(255, 193, 7, 0.1)', color: '#f59e0b' }}>
-                        HIGH
-                      </span>
-                    </div>
-                    <div className="issue-line-info">
-                      Line 45
-                    </div>
-                  </div>
-                  
-                  <div className="enhanced-issue-body">
-                    <h6 className="enhanced-issue-title">SQL injection vulnerability detected. User input is directly concatenated into SQL query without proper sanitization.</h6>
-                    
-                    <div className="ai-suggestion">
-                      <div className="suggestion-icon">
-                        <i className="bi bi-lightbulb"></i>
-                      </div>
-                      <div className="suggestion-text">
-                        Use parameterized queries or prepared statements to prevent SQL injection.
-                      </div>
-                    </div>
-                  </div>
+              // No issues found - show empty state
+              <div className="text-center py-5">
+                <div className="mb-3">
+                  <i className="bi bi-check-circle text-success" style={{ fontSize: '3rem' }}></i>
                 </div>
-                
-                <div className="enhanced-issue-card">
-                  <div className="enhanced-issue-header">
-                    <div className="severity-indicator">
-                      <span className="severity-badge-enhanced high" style={{ backgroundColor: 'rgba(255, 193, 7, 0.1)', color: '#f59e0b' }}>
-                        HIGH
-                      </span>
-                    </div>
-                    <div className="issue-line-info">
-                      Line 127
-                    </div>
-                  </div>
-                  
-                  <div className="enhanced-issue-body">
-                    <h6 className="enhanced-issue-title">Potential performance issue: Missing index on frequently queried columns in large dataset.</h6>
-                    
-                    <div className="ai-suggestion">
-                      <div className="suggestion-icon">
-                        <i className="bi bi-lightbulb"></i>
-                      </div>
-                      <div className="suggestion-text">
-                        Consider adding indexes on line_item_usage_account_name and line_item_usage_account_id.
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="enhanced-issue-card">
-                  <div className="enhanced-issue-header">
-                    <div className="severity-indicator">
-                      <span className="severity-badge-enhanced high" style={{ backgroundColor: 'rgba(255, 193, 7, 0.1)', color: '#f59e0b' }}>
-                        HIGH
-                      </span>
-                    </div>
-                    <div className="issue-line-info">
-                      Line 203
-                    </div>
-                  </div>
-                  
-                  <div className="enhanced-issue-body">
-                    <h6 className="enhanced-issue-title">Exception handling is too broad. Catching all exceptions can hide important errors.</h6>
-                    
-                    <div className="ai-suggestion">
-                      <div className="suggestion-icon">
-                        <i className="bi bi-lightbulb"></i>
-                      </div>
-                      <div className="suggestion-text">
-                        Catch specific exceptions like DatabaseError or ValueError instead of using bare except.
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </>
+                <h5 className="text-muted">No Issues Found</h5>
+                <p className="text-secondary">Your code looks great! No issues detected in this file.</p>
+              </div>
             )}
 
           </div>

@@ -78,6 +78,19 @@ interface ReviewData {
   pr_info?: any
   changes_summary?: any
   metadata?: any
+  // Timing information
+  timing?: {
+    total_time_ms: number
+    total_time_seconds: number
+    steps: {
+      validation: string
+      database_submission: string
+      ai_analysis: string
+      database_storage: string
+    }
+    agents_used: number
+    issues_found: number
+  }
 }
 
 interface QAResponse {
@@ -127,7 +140,8 @@ export function useCodeReview() {
           language: language,
           original_code: code,
           thread_id: 'code-review-' + Date.now(),
-          submission_id: submissionData.id
+          submission_id: submissionData.id,
+          timing: submissionData.timing || undefined
         }
         setReviewData(transformedData as any)
       } else {
