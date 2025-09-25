@@ -1458,7 +1458,9 @@ async def analyze_pr_for_review(request: dict, db: Session = Depends(get_db)):
         logger.info(f"Analyzing PR: {pr_info.full_repo}#{pr_info.pr_number}")
         
         # Create GitHub client with authentication token
-        github_token = "${GITHUB_TOKEN:-GITHUB_TOKEN_NOT_SET}"
+        github_token = os.getenv("GITHUB_TOKEN")
+        if not github_token:
+            raise HTTPException(status_code=500, detail="GitHub token not configured")
         github_client = GitHubClient(access_token=github_token)
         
         if is_demo_mode():
