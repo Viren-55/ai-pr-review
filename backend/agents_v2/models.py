@@ -52,6 +52,8 @@ class CodeIssue(BaseModel):
     category: IssueCategory = Field(..., description="Issue category")
     location: Optional[CodeLocation] = Field(None, description="Code location")
     code_snippet: Optional[str] = Field(None, description="Relevant code snippet")
+    suggested_fix: Optional[str] = Field(None, description="Suggested fix code")
+    fix_explanation: Optional[str] = Field(None, description="Explanation of the fix")
     confidence: float = Field(0.0, ge=0.0, le=1.0, description="Confidence score")
     detected_by: str = Field(..., description="Agent that detected the issue")
     detected_at: datetime = Field(default_factory=datetime.now)

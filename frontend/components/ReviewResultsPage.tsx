@@ -3,6 +3,7 @@
 import React, { useState, useMemo } from 'react'
 import { Container, Row, Col, Card, Badge, Button, Nav, ProgressBar } from 'react-bootstrap'
 import TimingDisplay from './TimingDisplay'
+import { generateSuggestion, generateFix, getIssueTitleDetails } from './IssueHelpers'
 
 interface ReviewResultsPageProps {
   reviewData: any
@@ -56,18 +57,21 @@ export default function ReviewResultsPage({ reviewData, onViewDetails, onNewRevi
       return []
     }
     
-    const issues: ParsedIssue[] = reviewData.analysis.issues.map((issue: any) => ({
-      id: issue.id,
-      title: issue.title,
-      description: issue.description,
-      severity: issue.severity as 'critical' | 'high' | 'medium' | 'low',
-      category: issue.category,
-      suggestion: issue.fix_explanation || 'No suggestion available',
-      lineNumber: issue.line_number,
-      filePath: reviewData.filename || 'Submitted Code',
-      codeSnippet: issue.code_snippet,
-      fixedCode: issue.suggested_fix
-    }))
+    const issues: ParsedIssue[] = reviewData.analysis.issues.map((issue: any) => {
+      const { title: improvedTitle, shortDescription } = getIssueTitleDetails(issue)
+      return {
+        id: issue.id,
+        title: improvedTitle,
+        description: shortDescription || issue.description || 'Issue detected in code',
+        severity: (issue.severity || 'medium').toLowerCase() as 'critical' | 'high' | 'medium' | 'low',
+        category: issue.category || 'general',
+        suggestion: issue.fix_explanation || issue.suggested_fix || generateSuggestion(issue),
+        lineNumber: issue.line_number,
+        filePath: reviewData.filename || 'Submitted Code',
+        codeSnippet: issue.code_snippet,
+        fixedCode: issue.suggested_fix || generateFix(issue)
+      }
+    })
     
     return issues
   }, [reviewData])
@@ -719,16 +723,59 @@ export default function ReviewResultsPage({ reviewData, onViewDetails, onNewRevi
                   
                   <div className="enhanced-issue-body">
                     <h6 className="enhanced-issue-title">{issue.title}</h6>
-                    <p className="enhanced-issue-description">
+                    
+                    {/* Issue Description */}
+                    <p className="enhanced-issue-description" style={{
+                      fontSize: '0.875rem',
+                      color: '#6c757d',
+                      marginBottom: '0.75rem',
+                      lineHeight: '1.4'
+                    }}>
                       {issue.description}
                     </p>
                     
-                    {/* AI Suggestion */}
-                    <div className="ai-suggestion">
-                      <div className="suggestion-icon">
-                        <i className="bi bi-lightbulb"></i>
+                    {/* Code Snippet */}
+                    {issue.codeSnippet && (
+                      <div className="code-snippet-box" style={{
+                        background: 'rgba(13, 110, 253, 0.05)',
+                        border: '1px solid rgba(13, 110, 253, 0.15)',
+                        borderRadius: '6px',
+                        padding: '0.75rem',
+                        marginBottom: '0.75rem',
+                        fontFamily: 'Monaco, Consolas, monospace'
+                      }}>
+                        <div style={{ fontSize: '0.75rem', color: '#6c757d', marginBottom: '0.25rem' }}>
+                          Affected Code:
+                        </div>
+                        <code style={{ 
+                          fontSize: '0.85rem',
+                          color: '#dc3545',
+                          display: 'block',
+                          whiteSpace: 'pre-wrap',
+                          wordBreak: 'break-word'
+                        }}>
+                          {issue.codeSnippet}
+                        </code>
                       </div>
-                      <div className="suggestion-text">
+                    )}
+                    
+                    {/* AI Suggestion */}
+                    <div className="ai-suggestion" style={{
+                      background: 'rgba(40, 167, 69, 0.05)',
+                      border: '1px solid rgba(40, 167, 69, 0.15)',
+                      borderRadius: '6px',
+                      padding: '0.75rem'
+                    }}>
+                      <div className="suggestion-icon">
+                        <i className="bi bi-lightbulb" style={{ color: '#28a745' }}></i>
+                      </div>
+                      <div className="suggestion-text" style={{
+                        fontSize: '0.85rem',
+                        color: '#495057'
+                      }}>
+                        <strong style={{ display: 'block', marginBottom: '0.25rem', color: '#212529' }}>
+                          Suggested Fix:
+                        </strong>
                         {issue.suggestion}
                       </div>
                     </div>
@@ -752,11 +799,15 @@ export default function ReviewResultsPage({ reviewData, onViewDetails, onNewRevi
                             className="btn btn-sm btn-outline-secondary preview-fix-btn"
                             onClick={(e) => {
                               e.stopPropagation();
-                              // Show fix preview
-                              const previewMessage = `🔍 Fix Preview for: ${issue.title}\n\n` +
-                                `📍 Location: Line ${issue.lineNumber || 'Multiple lines'}\n\n` +
-                                `🔧 Suggested Fix:\n${issue.suggestion}\n\n` +
-                                `${issue.fixedCode ? `💻 Code Change:\n${issue.fixedCode}` : ''}`;
+                              // Show fix preview in a better format
+                              const originalCode = issue.codeSnippet || 'No original code available';
+                              const fixedCode = issue.fixedCode || generateFix(issue);
+                              
+                              const previewMessage = `🔍 Fix Preview: ${issue.title}\n\n` +
+                                `📍 Location: Line ${issue.lineNumber || 'Unknown'}\n\n` +
+                                `❌ Original Code:\n${originalCode}\n\n` +
+                                `✅ Fixed Code:\n${fixedCode}\n\n` +
+                                `💡 Suggestion:\n${issue.suggestion}`;
                               
                               alert(previewMessage);
                             }}

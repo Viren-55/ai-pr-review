@@ -2,10 +2,10 @@
 
 import re
 import uuid
+import asyncio
 from typing import List, Dict, Any
 
 from pydantic_ai import RunContext
-from typing import Any
 
 from .base_agent import BaseCodeAgent
 from .models import (
@@ -233,72 +233,111 @@ class PerformanceAnalysisAgent(BaseCodeAgent):
             List of performance issues
         """
         issues = []
-        lines = context.code.split('\n')
         
-        # Detect inefficient loops directly
-        loop_issues = []
-        patterns = [
-            (r'for.*in.*range\(len\(', "Using range(len()) instead of enumerate()", "medium"),
-            (r'\.append\(.*\).*for.*in', "List append in loop instead of list comprehension", "low"),
-            (r'for.*in.*\.keys\(\)', "Iterating over .keys() unnecessarily", "low"),
-        ]
+        # Use Pydantic AI agent to analyze code for performance issues - simplified for speed
+        prompt = f"""Analyze this {context.language} code for performance issues:
+
+```{context.language}
+{context.code}
+```
+
+List each performance issue in this format:
+ISSUE:
+- Line: [number]
+- Type: [issue type]
+- Description: [brief description]
+- Severity: [critical/high/medium/low]
+- Suggestion: [optimization]"""
+
+        try:
+            # Run agent to get AI analysis with timeout
+            result = await asyncio.wait_for(
+                self.agent.run(prompt),
+                timeout=20.0  # 20-second timeout per agent
+            )
+            ai_response = result.output
+            
+            # Parse AI response to extract structured issues
+            lines = context.code.split('\n')
+            
+            # Split response into individual issues
+            issue_blocks = ai_response.split('ISSUE:')
+            
+            for block in issue_blocks[1:]:  # Skip first empty split
+                if not block.strip():
+                    continue
+                
+                # Parse each field from the structured response
+                line_num = None
+                issue_type = "Performance Issue"
+                description = ""
+                severity = "medium"
+                suggestion = ""
+                fixed_code = ""
+                
+                for line in block.split('\n'):
+                    line = line.strip()
+                    if line.startswith('- Line:'):
+                        line_match = re.search(r'Line:\s*(\d+)', line)
+                        if line_match:
+                            line_num = int(line_match.group(1))
+                    elif line.startswith('- Type:'):
+                        issue_type = line.replace('- Type:', '').strip()
+                    elif line.startswith('- Description:'):
+                        description = line.replace('- Description:', '').strip()
+                    elif line.startswith('- Severity:'):
+                        sev = line.replace('- Severity:', '').strip().lower()
+                        if sev in ['critical', 'high', 'medium', 'low']:
+                            severity = sev
+                    elif line.startswith('- Suggestion:'):
+                        suggestion = line.replace('- Suggestion:', '').strip()
+                    elif line.startswith('- Fixed Code:'):
+                        fixed_code = line.replace('- Fixed Code:', '').strip()
+                
+                # If we couldn't parse line number, try alternative formats
+                if not line_num:
+                    # Try to find line number in the whole block
+                    line_match = re.search(r'(?:Line|line)[\s:]+(\d+)', block, re.IGNORECASE)
+                    if line_match:
+                        line_num = int(line_match.group(1))
+                    else:
+                        line_num = 1  # Default to line 1 if not found
+                
+                # Get code snippet from actual code
+                code_snippet = ""
+                if 0 < line_num <= len(lines):
+                    code_snippet = lines[line_num - 1].strip()
+                
+                # Create issue with all extracted information
+                issues.append(CodeIssue(
+                    id=str(uuid.uuid4()),
+                    title=issue_type,
+                    description=description or f"Performance issue detected at line {line_num}",
+                    severity=SeverityLevel(severity),
+                    category=IssueCategory.PERFORMANCE,
+                    location=CodeLocation(
+                        file_path=context.file_path or "unknown",
+                        line_start=line_num,
+                        line_end=line_num
+                    ),
+                    code_snippet=code_snippet,
+                    suggested_fix=fixed_code if fixed_code else None,
+                    fix_explanation=suggestion if suggestion else None,
+                    confidence=0.9,
+                    detected_by=self.name
+                ))
+            
+            # If AI found issues, return them
+            if issues:
+                return issues
+            
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"AI analysis failed: {e}, using fallback")
         
-        for line_num, line in enumerate(lines, 1):
-            for pattern, description, severity in patterns:
-                if re.search(pattern, line):
-                    loop_issues.append({
-                        "line": line_num,
-                        "description": description,
-                        "code": line.strip(),
-                        "severity": severity
-                    })
-        for issue in loop_issues:
-            issues.append(CodeIssue(
-                id=str(uuid.uuid4()),
-                title="Inefficient Loop Pattern",
-                description=issue["description"],
-                severity=SeverityLevel(issue["severity"]),
-                category=IssueCategory.PERFORMANCE,
-                location=CodeLocation(
-                    file_path=context.file_path or "unknown",
-                    line_start=issue["line"],
-                    line_end=issue["line"]
-                ),
-                code_snippet=issue["code"],
-                confidence=0.8,
-                detected_by=self.name
-            ))
-        
-        # Detect database issues directly
-        db_issues = []
-        for line_num, line in enumerate(lines, 1):
-            if re.search(r'SELECT\s+\*', line, re.IGNORECASE):
-                db_issues.append({
-                    "line": line_num,
-                    "type": "select_all",
-                    "description": "SELECT * can fetch unnecessary data",
-                    "severity": "low"
-                })
-        for issue in db_issues:
-            title_map = {
-                "n_plus_one": "N+1 Query Problem",
-                "missing_index": "Potential Missing Index",
-                "select_all": "Inefficient SELECT Query"
-            }
-            issues.append(CodeIssue(
-                id=str(uuid.uuid4()),
-                title=title_map.get(issue.get("type", ""), "Database Performance Issue"),
-                description=issue["description"],
-                severity=SeverityLevel(issue["severity"]),
-                category=IssueCategory.PERFORMANCE,
-                location=CodeLocation(
-                    file_path=context.file_path or "unknown",
-                    line_start=issue["line"],
-                    line_end=issue["line"]
-                ),
-                confidence=0.75,
-                detected_by=self.name
-            ))
+        # Minimal fallback only if AI completely fails
+        return issues
         
         # Detect memory issues directly
         memory_issues = []

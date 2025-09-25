@@ -119,6 +119,8 @@ export function useCodeReview() {
         code,
         language,
         filename: filename || undefined
+      }, {
+        timeout: 75000  // 75 seconds to allow for complex AI analysis
       })
       
       // The structured API returns data in the correct format already
@@ -154,6 +156,8 @@ export function useCodeReview() {
         errorMessage = 'Backend service is not running. Please ensure the API server is started on port 8000.'
       } else if (err.code === 'ERR_NETWORK' || err.message?.includes('Network Error')) {
         errorMessage = 'Network connection failed. Please check if the backend service is running.'
+      } else if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
+        errorMessage = 'Analysis is taking longer than expected. For complex code, this may take up to 60 seconds. Please try again.'
       } else if (err.response?.status === 404) {
         errorMessage = 'Review endpoint not found. Please check the API configuration.'
       } else if (err.response?.status >= 500) {
@@ -182,6 +186,8 @@ export function useCodeReview() {
       const response = await axios.post(`${API_BASE_URL}/review/github-pr`, {
         pr_url: prUrl,
         language: language
+      }, {
+        timeout: 75000  // 75 seconds to allow for complex AI analysis
       })
       
       if (response.data.status === 'success') {
@@ -259,6 +265,8 @@ export function useCodeReview() {
         errorMessage = 'Backend service is not running. Please ensure the API server is started on port 8000.'
       } else if (err.code === 'ERR_NETWORK' || err.message?.includes('Network Error')) {
         errorMessage = 'Network connection failed. Please check if the backend service is running.'
+      } else if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
+        errorMessage = 'PR analysis is taking longer than expected. Large PRs may take up to 60 seconds to analyze. Please try again.'
       } else if (err.response?.status === 404) {
         errorMessage = 'GitHub PR review endpoint not found. Please check the API configuration.'
       } else if (err.response?.status === 401) {
@@ -283,6 +291,8 @@ export function useCodeReview() {
       const response = await axios.post(`${API_BASE_URL}/ask`, {
         thread_id: threadId,
         question
+      }, {
+        timeout: 75000  // 75 seconds for complex AI analysis
       })
       
       return response.data

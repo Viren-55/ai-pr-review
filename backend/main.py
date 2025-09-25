@@ -1163,7 +1163,7 @@ async def create_submission(request: CodeSubmissionCreate, db: Session = Depends
                 t_orchestrator_start = time.time()
                 result = await asyncio.wait_for(
                     orchestrator.analyze_code(context),
-                    timeout=30.0  # 30 second timeout
+                    timeout=60.0  # 60 second timeout - increased for complex analysis
                 )
                 logger.info(f"[TIMING] AI orchestrator analysis: {(time.time() - t_orchestrator_start)*1000:.2f}ms")
                 

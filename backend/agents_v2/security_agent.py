@@ -2,6 +2,7 @@
 
 import re
 import uuid
+import asyncio
 from typing import List, Dict, Any
 
 from pydantic_ai import RunContext
@@ -196,110 +197,98 @@ class SecurityAnalysisAgent(BaseCodeAgent):
         """
         issues = []
         
-        # Use Pydantic AI agent to analyze code
-        prompt = f"""Analyze this {context.language} code for security vulnerabilities:
+        # Use Pydantic AI agent to analyze code - simplified prompt for faster response
+        prompt = f"""Analyze this {context.language} code for security issues:
 
 ```{context.language}
 {context.code}
 ```
 
-Find and list ALL security issues including:
-- SQL injection vulnerabilities
-- XSS (Cross-site scripting) vulnerabilities
-- Hardcoded secrets and credentials
-- Insecure operations (pickle, eval, os.system, etc.)
-- Weak cryptography
-- Improper exception handling
-- Any other security concerns
-
-For each issue provide:
-- Line number (exact line number from the code)
-- Issue type (e.g., "SQL injection", "Hardcoded secret", etc.)
-- Description (clear explanation of the vulnerability)
-- Severity (critical/high/medium/low)
-
-Format each issue clearly on separate lines."""
+List each security issue in this format:
+ISSUE:
+- Line: [number]
+- Type: [issue type]
+- Description: [brief description]
+- Severity: [critical/high/medium/low]
+- Suggestion: [fix]"""
 
         try:
-            # Run agent to get AI analysis
-            result = await self.agent.run(prompt)
+            # Run agent to get AI analysis with timeout
+            result = await asyncio.wait_for(
+                self.agent.run(prompt),
+                timeout=20.0  # 20-second timeout per agent
+            )
             ai_response = result.output
             
             # Parse AI response to extract structured issues
             lines = context.code.split('\n')
             
-            # Parse response line by line
-            for response_line in ai_response.split('\n'):
-                response_line = response_line.strip()
-                if not response_line:
+            # Split response into individual issues
+            issue_blocks = ai_response.split('ISSUE:')
+            
+            for block in issue_blocks[1:]:  # Skip first empty split
+                if not block.strip():
                     continue
                 
-                # Try to extract issue information
-                # Format: "Line X" or "Line X-Y" followed by issue details
-                line_match = re.search(r'(?:Line|line)\s+(\d+)(?:\s*[-–]\s*(\d+))?', response_line, re.IGNORECASE)
+                # Parse each field from the structured response
+                line_num = None
+                issue_type = "Security Issue"
+                description = ""
+                severity = "medium"
+                suggestion = ""
+                fixed_code = ""
                 
-                if line_match:
-                    line_start = int(line_match.group(1))
-                    line_end = int(line_match.group(2)) if line_match.group(2) else line_start
-                    
-                    # Extract issue type
-                    issue_type = "Security Issue"
-                    type_match = re.search(r'Issue type:\s*([^\n]+)', response_line, re.IGNORECASE)
-                    if type_match:
-                        issue_type = type_match.group(1).strip()
-                    elif 'SQL injection' in response_line or 'SQL Injection' in response_line:
-                        issue_type = "SQL Injection"
-                    elif 'XSS' in response_line or 'cross-site scripting' in response_line.lower():
-                        issue_type = "Cross-Site Scripting (XSS)"
-                    elif 'secret' in response_line.lower() or 'password' in response_line.lower() or 'api key' in response_line.lower():
-                        issue_type = "Hardcoded Secret"
-                    elif 'pickle' in response_line.lower() or 'deserializ' in response_line.lower():
-                        issue_type = "Insecure Deserialization"
-                    elif 'command injection' in response_line.lower() or 'os.system' in response_line:
-                        issue_type = "Command Injection"
-                    
-                    # Extract description
-                    description = response_line
-                    desc_match = re.search(r'Description:\s*([^\n]+)', response_line, re.IGNORECASE)
-                    if desc_match:
-                        description = desc_match.group(1).strip()
+                for line in block.split('\n'):
+                    line = line.strip()
+                    if line.startswith('- Line:'):
+                        line_match = re.search(r'Line:\s*(\d+)', line)
+                        if line_match:
+                            line_num = int(line_match.group(1))
+                    elif line.startswith('- Type:'):
+                        issue_type = line.replace('- Type:', '').strip()
+                    elif line.startswith('- Description:'):
+                        description = line.replace('- Description:', '').strip()
+                    elif line.startswith('- Severity:'):
+                        sev = line.replace('- Severity:', '').strip().lower()
+                        if sev in ['critical', 'high', 'medium', 'low']:
+                            severity = sev
+                    elif line.startswith('- Suggestion:'):
+                        suggestion = line.replace('- Suggestion:', '').strip()
+                    elif line.startswith('- Fixed Code:'):
+                        fixed_code = line.replace('- Fixed Code:', '').strip()
+                
+                # If we couldn't parse line number, try alternative formats
+                if not line_num:
+                    # Try to find line number in the whole block
+                    line_match = re.search(r'(?:Line|line)[\s:]+(\d+)', block, re.IGNORECASE)
+                    if line_match:
+                        line_num = int(line_match.group(1))
                     else:
-                        # Use the whole line after line number
-                        desc_parts = re.split(r'(?:Line|line)\s+\d+(?:\s*[-–]\s*\d+)?\s*[:\-–]?\s*', response_line, maxsplit=1, flags=re.IGNORECASE)
-                        if len(desc_parts) > 1:
-                            description = desc_parts[1].strip()
-                    
-                    # Extract severity
-                    severity = "medium"
-                    sev_match = re.search(r'Severity:\s*(critical|high|medium|low)', response_line, re.IGNORECASE)
-                    if sev_match:
-                        severity = sev_match.group(1).lower()
-                    elif 'critical' in response_line.lower():
-                        severity = "critical"
-                    elif 'high' in response_line.lower():
-                        severity = "high"
-                    
-                    # Get code snippet
-                    code_snippet = ""
-                    if 0 < line_start <= len(lines):
-                        code_snippet = lines[line_start - 1].strip()
-                    
-                    # Create issue
-                    issues.append(CodeIssue(
-                        id=str(uuid.uuid4()),
-                        title=issue_type,
-                        description=description,
-                        severity=SeverityLevel(severity),
-                        category=IssueCategory.SECURITY,
-                        location=CodeLocation(
-                            file_path=context.file_path or "unknown",
-                            line_start=line_start,
-                            line_end=line_end
-                        ),
-                        code_snippet=code_snippet,
-                        confidence=0.9,
-                        detected_by=self.name
-                    ))
+                        line_num = 1  # Default to line 1 if not found
+                
+                # Get code snippet from actual code
+                code_snippet = ""
+                if 0 < line_num <= len(lines):
+                    code_snippet = lines[line_num - 1].strip()
+                
+                # Create issue with all extracted information
+                issues.append(CodeIssue(
+                    id=str(uuid.uuid4()),
+                    title=issue_type,
+                    description=description or f"Security issue detected at line {line_num}",
+                    severity=SeverityLevel(severity),
+                    category=IssueCategory.SECURITY,
+                    location=CodeLocation(
+                        file_path=context.file_path or "unknown",
+                        line_start=line_num,
+                        line_end=line_num
+                    ),
+                    code_snippet=code_snippet,
+                    suggested_fix=fixed_code if fixed_code else None,
+                    fix_explanation=suggestion if suggestion else None,
+                    confidence=0.9,
+                    detected_by=self.name
+                ))
             
             # If AI found issues, return them
             if issues:
